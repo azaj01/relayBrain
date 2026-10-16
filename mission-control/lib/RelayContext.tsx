@@ -70,6 +70,11 @@ export function RelayProvider({ children }: { children: ReactNode }) {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("activity");
+  useEffect(() => {
+    // Deep link, e.g. /?tab=graph for the memory graph.
+    const wanted = new URLSearchParams(window.location.search).get("tab");
+    if (wanted) setTab(wanted as TabId);
+  }, []);
   const [addOpen, setAddOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);

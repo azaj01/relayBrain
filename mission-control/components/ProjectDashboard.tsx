@@ -10,6 +10,7 @@ import { FileLocksPanel } from "./FileLocksPanel";
 import { TeamPanel } from "./TeamPanel";
 import { MemoryPanel } from "./MemoryPanel";
 import { SettingsPanel } from "./SettingsPanel";
+import { MemoryGraphPanel } from "./memorygraph/MemoryGraphPanel";
 import ui from "@/styles/ui.module.css";
 
 const TABS: { id: TabId; label: string }[] = [
@@ -19,6 +20,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "locks", label: "Coordinator" },
   { id: "team", label: "Team" },
   { id: "memory", label: "Memory" },
+  { id: "graph", label: "Memory Graph" },
 ];
 
 export function ProjectDashboard() {
@@ -47,6 +49,7 @@ export function ProjectDashboard() {
           {tab === "locks" && <FileLocksPanel />}
           {tab === "team" && <TeamPanel />}
           {tab === "memory" && <MemoryPanel />}
+          {tab === "graph" && <MemoryGraphPanel />}
           {tab === "settings" && <SettingsPanel />}
         </div>
         <div className={ui.panelFade} />
