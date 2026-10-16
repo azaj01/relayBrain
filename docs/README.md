@@ -36,6 +36,7 @@ understand how it works, start at [Architecture](./ARCHITECTURE.md).
 | [Architecture](./ARCHITECTURE.md) | Process model, the two planes, and how a single edit flows end to end. |
 | [Locking](./LOCKING.md) | The lock table, TTLs, ownership, reads, and dependency-graph soft locks. |
 | [Sync and patches](./SYNC.md) | Patch format, Lamport ordering, operational transform, transcript harvesting. |
+| [Memory graph](./MEMORY-GRAPH.md) | FalkorDB project memory: the model, inferred prompts, context at conflict time, agent tools, setup. |
 
 ## Operations
 

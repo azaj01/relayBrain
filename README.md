@@ -14,7 +14,7 @@
 
 <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A520-3c873a?style=for-the-badge&logo=node.js&logoColor=white" alt="Node 20+"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2563eb?style=for-the-badge" alt="MIT"></a>
-<img src="https://img.shields.io/badge/storage-files%20only-64748b?style=for-the-badge" alt="No database">
+<img src="https://img.shields.io/badge/memory-FalkorDB%20graph-dc2626?style=for-the-badge" alt="FalkorDB memory graph">
 <img src="https://img.shields.io/badge/login-not%20required-16a34a?style=for-the-badge" alt="No login">
 
 <br/>
@@ -68,6 +68,32 @@ Relay sits under every agent as a **coordination layer**. Pre-tool hooks claim a
 | **Dependency-graph locking** | Files do not exist independently — one change can affect dozens. Relay parses imports with tree-sitter and asks *"does this change affect files another agent is working on?"*, not just *"is this exact file locked?"* Agents stay parallel; the blast radius stays safe. |
 | **Patch sync across machines** | Your teammate has their own filesystem, environment, and agents. Relay propagates **patches**, not whole-project copies — `relay push` / `relay pull` keep every clone on the same working state. |
 | **Mission Control** | One board for every agent on every machine: live lock table, lock graph, code edits, unified agent chat history, conflicts, presence. |
+| **Memory graph (FalkorDB)** | Every agent, session, prompt, edit, block and decision across machines, as one graph. Agents get it *before* they act (`relay_session_brief`), and *at the moment of conflict*: a denied lock says what the holder is working on. |
+
+## Memory graph: built for Graph Hacks (FalkorDB)
+
+Locks stop two agents writing the same file at once. They don't tell the second agent **why** the file is taken, **what was decided** about it, or **which prompt** made it look the way it does. Before this, relay's memory was flat JSON, capped at 2,000 events, with nothing connected.
+
+Now every agent turn, edit, lock claim, block, decision and teammate's activity flows into a **FalkorDB graph per project**:
+
+```
+Person → Agent → Session → Turn
+                    └─ MADE → Edit ─ MODIFIED → File ← ON ─ Contention ─ HELD_BY → Session (its intent)
+                               └─ PROMPTED_BY → the user request behind the change
+File ─ CO_EDITED → File   (PageRank = hotspots, label propagation = work areas)
+```
+
+- **Explainable by default.** Every edit links to the user request that caused it, inferred from transcripts. "continue" and "yes" are skipped in favor of the real request, so no agent has to report anything.
+- **Context at the conflict.** *"File `src/auth.ts` is locked by Claude Code… They're working on: "switch the login flow to JWT tokens" (2 min ago)."*
+- **Context before acting.** `relay_session_brief(paths)` hands any agent (Claude Code, Cursor, Codex, Copilot, Antigravity) who is on those files now and why, past blocks, decisions, the prompts behind recent changes, and who to ask.
+- **Graph algorithms as agent tools.** PageRank and label propagation over co-edited files find coordination hotspots and work areas. `relay_graph_query` exposes 10 named Cypher queries. Every answer ships with its Cypher.
+- **Shared across the room.** The host's graph is the room's memory. Guests query it over the existing tunnel, even without FalkorDB installed.
+- **Safe to add.** Single writer, idempotent `MERGE`s, a circuit breaker, and a full fail-open path: no `RELAY_FALKOR_URL` means relay behaves exactly as before.
+
+```bash
+npm run falkor:up && export RELAY_FALKOR_URL=falkor://localhost:6379 && relay serve
+# Mission Control → Memory Graph tab  ·  docs: ./docs/MEMORY-GRAPH.md
+```
 
 ## Quick start
 
@@ -102,7 +128,7 @@ Now start agents as usual. Hooks claim and release locks automatically — nobod
 | attach an existing repo | `relay add /path/to/repo` |
 | fresh clone | `relay clone <url> [dir]` |
 
-Requires **Node.js 18+** (20+ recommended). No database, no hosted backend, no login server.
+Requires **Node.js 18+** (20+ recommended). No hosted backend, no login server. The memory graph needs FalkorDB (`npm run falkor:up`, Docker); without it, relay runs on files alone.
 
 </details>
 
@@ -180,6 +206,8 @@ Coordination tools (`relay_claim_file`, `relay_release_file`, `relay_status`) ru
 | `relay_get_chat_history` | Unified agent chat across every room member |
 | `relay_room_brief` | Teammate activity brief (for the `/relay ask` agent pseudo-command) |
 | `relay_get_collision_stats` | Lifetime counters for collisions Relay prevented |
+| `relay_session_brief` | Memory-graph brief for files you're about to touch: who's on them now and why, blocks, decisions, prompts behind changes |
+| `relay_graph_query` | Named Cypher queries over the FalkorDB memory graph (`file_story`, `who_to_ask`, `contention_trace`, `search_memory`, `hotspots`, …) |
 | `relay_report_change` | Push a code-change event |
 | `relay_report_decision` / `relay_get_decisions` | Append / read decisions |
 | `relay_update_task` / `relay_get_active_tasks` | Append / read tasks |
