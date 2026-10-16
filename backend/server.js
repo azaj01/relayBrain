@@ -154,7 +154,7 @@ async function main() {
 
   const sse = new SseHub();
   try {
-    installGlobalHooks();
+    if (process.env.RELAY_SKIP_GLOBAL_HOOKS !== "1") installGlobalHooks();
   } catch {
     /* global configs are best-effort */
   }
@@ -165,6 +165,14 @@ async function main() {
   });
   const coordPort = await listen(coordServer, Number(process.env.RELAY_COORDINATOR_PORT || 0));
   coordApp.set("port", coordPort);
+  require("./lib/falkor").init(app, {
+    lockTable,
+    sse,
+    projectForPath: (p) => projectForPath(p),
+    currentUser: () => currentUser(),
+    requireRoomMember: (req, res, next) => requireRoomMember(req, res, next),
+    fetchHost: (url, pathname, init) => fetchHost(url, pathname, init),
+  });
   // NOTE: coordinator state is published only once the API port is bound (see
   // server.listen below). Writing it here means a second `relay serve` that
   // dies on EADDRINUSE still overwrites the live instance's pointer with a port

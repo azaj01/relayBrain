@@ -1,0 +1,14 @@
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: relay-falkordb
+    ports:
+      - "6379:6379"
+      - "3010:3000"
+    environment:
+      REDIS_ARGS: "--appendonly yes --appendfsync everysec"
+    volumes:
+      - falkordb_data:/data
+    restart: unless-stopped
+volumes:
+  falkordb_data: {}

@@ -244,6 +244,7 @@ function syncTranscripts(project, opts = {}) {
   memory.lastTranscriptSyncAt = Date.now();
   if (memory.ir) delete memory.ir;
   saveMemory(project.id, memory);
+  require("../falkor/bus").emit("history", { project, workspacePath, memory });
   return memory;
 }
 
@@ -284,5 +285,6 @@ module.exports = {
   latestTranscriptMtime,
   unifyEvent,
   compareEvents,
+  relativeEditPath,
   id,
 };

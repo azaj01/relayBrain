@@ -15,18 +15,20 @@ function mcpServerScript() {
   return path.join(repoRoot(), "backend", "mcp", "server.js");
 }
 
-function relayMcpEnv(workspacePath) {
+function relayMcpEnv(workspacePath, agentLabel) {
   const env = {};
   if (workspacePath) env.RELAY_WORKSPACE_PATH = path.resolve(workspacePath);
+  // The stdio server can't otherwise tell which agent is calling it.
+  if (agentLabel) env.RELAY_AGENT_LABEL = agentLabel;
   return env;
 }
 
-function relayStdioMcp(workspacePath) {
+function relayStdioMcp(workspacePath, agentLabel) {
   const script = mcpServerScript();
   return {
     command: process.execPath,
     args: [script],
-    env: relayMcpEnv(workspacePath),
+    env: relayMcpEnv(workspacePath, agentLabel),
   };
 }
 
@@ -88,7 +90,7 @@ function mergeCodexMcp(configPath, workspacePath) {
   const node = process.execPath.replace(/\\/g, "/");
   const script = mcpServerScript().replace(/\\/g, "/");
   const ws = path.resolve(workspacePath).replace(/\\/g, "/");
-  const envLines = [`RELAY_WORKSPACE_PATH = "${ws.replace(/"/g, '\\"')}"`];
+  const envLines = [`RELAY_WORKSPACE_PATH = "${ws.replace(/"/g, '\\"')}"`, `RELAY_AGENT_LABEL = "Codex"`];
   const block = `[mcp_servers.relay]
 command = "${node.replace(/"/g, '\\"')}"
 args = ["${script.replace(/"/g, '\\"')}"]
@@ -100,7 +102,8 @@ ${envLines.join("\n")}
   const marker = "[mcp_servers.relay]";
   const idx = text.indexOf(marker);
   if (idx >= 0) {
-    const next = text.slice(idx + marker.length).search(/\n\[mcp_servers\./);
+    // Skip our own [mcp_servers.relay.env] table, or the old one survives and TOML sees it twice.
+    const next = text.slice(idx + marker.length).search(/\n\[(?!mcp_servers\.relay(\.env)?\])/);
     text = next >= 0 ? `${text.slice(0, idx)}${block}${text.slice(idx + marker.length + next)}` : `${text.slice(0, idx)}${block}`;
   } else {
     text = `${text.trimEnd()}\n\n${block}`;
@@ -127,7 +130,7 @@ function installProjectRelay(workspacePath) {
   if (!workspacePath) return { ok: false, error: "workspace_required" };
   const resolved = path.resolve(workspacePath);
   const block = relayOsBlock();
-  const mcp = relayStdioMcp(resolved);
+  const mcpFor = (label) => relayStdioMcp(resolved, label);
   const results = { instructions: {}, mcp: {} };
 
   const instructionTargets = [
@@ -154,14 +157,14 @@ function installProjectRelay(workspacePath) {
   ensureRelayDir(resolved);
 
   try {
-    mergeJsonMcp(path.join(resolved, ".cursor", "mcp.json"), mcp);
+    mergeJsonMcp(path.join(resolved, ".cursor", "mcp.json"), mcpFor("Cursor"));
     results.mcp[".cursor/mcp.json"] = "ok";
   } catch (err) {
     results.mcp[".cursor/mcp.json"] = String(err.message || err);
   }
 
   try {
-    mergeClaudeMcp(path.join(resolved, ".claude", "settings.json"), mcp);
+    mergeClaudeMcp(path.join(resolved, ".claude", "settings.json"), mcpFor("Claude Code"));
     results.mcp[".claude/settings.json"] = "ok";
   } catch (err) {
     results.mcp[".claude/settings.json"] = String(err.message || err);
@@ -175,14 +178,14 @@ function installProjectRelay(workspacePath) {
   }
 
   try {
-    mergeJsonMcp(path.join(resolved, ".github", "mcp.json"), mcp, { copilotType: true });
+    mergeJsonMcp(path.join(resolved, ".github", "mcp.json"), mcpFor("Copilot"), { copilotType: true });
     results.mcp[".github/mcp.json"] = "ok";
   } catch (err) {
     results.mcp[".github/mcp.json"] = String(err.message || err);
   }
 
   try {
-    mergeJsonMcp(path.join(resolved, ".agents", "mcp_config.json"), mcp);
+    mergeJsonMcp(path.join(resolved, ".agents", "mcp_config.json"), mcpFor("Antigravity"));
     results.mcp[".agents/mcp_config.json"] = "ok";
   } catch (err) {
     results.mcp[".agents/mcp_config.json"] = String(err.message || err);
@@ -193,16 +196,16 @@ function installProjectRelay(workspacePath) {
 
 function installGlobalRelay() {
   const home = os.homedir();
-  const mcp = relayStdioMcp(null);
+  const mcpFor = (label) => relayStdioMcp(null, label);
   const results = {};
   try {
-    mergeJsonMcp(path.join(home, ".cursor", "mcp.json"), mcp);
+    mergeJsonMcp(path.join(home, ".cursor", "mcp.json"), mcpFor("Cursor"));
     results["~/.cursor/mcp.json"] = "ok";
   } catch (err) {
     results["~/.cursor/mcp.json"] = String(err.message || err);
   }
   try {
-    mergeClaudeMcp(path.join(home, ".claude", "settings.json"), mcp);
+    mergeClaudeMcp(path.join(home, ".claude", "settings.json"), mcpFor("Claude Code"));
     results["~/.claude/settings.json"] = "ok";
   } catch (err) {
     results["~/.claude/settings.json"] = String(err.message || err);
@@ -215,7 +218,7 @@ function installGlobalRelay() {
   }
   try {
     const copilotPath = path.join(home, ".copilot", "mcp-config.json");
-    mergeJsonMcp(copilotPath, mcp, { copilotType: true });
+    mergeJsonMcp(copilotPath, mcpFor("Copilot"), { copilotType: true });
     results["~/.copilot/mcp-config.json"] = "ok";
   } catch (err) {
     results["~/.copilot/mcp-config.json"] = String(err.message || err);
