@@ -9,6 +9,7 @@ const DIFF_HEAD_MAX = 1000;
 const INTENT_MAX = 280;
 const TITLE_MAX = 120;
 const STALE_PROMPT_MS = 30 * 60 * 1000;
+const DUPLICATE_WINDOW_MS = 2 * 60 * 1000;
 // "continue"-style nudges say nothing about intent; the request they continue does.
 const FILLER = /^(please\s+)?(continue|go(\s+on|\s+ahead)?|yes|yep|yeah|y|ok(ay)?|sure|proceed|do\s+it|keep\s+going|carry\s+on|next|try\s+again|retry|go\s+for\s+it|sounds\s+good|lgtm|done\??)[\s.!]*$/i;
 
@@ -82,6 +83,7 @@ function projectHistory(history, opts = {}) {
     let thinking = 0;
     let fresh = false;
     let seq = 0;
+    const recent = new Map();
     let startedAt = Infinity;
     let lastAt = 0;
 
@@ -99,6 +101,12 @@ function projectHistory(history, opts = {}) {
 
       if (event.kind === "message" && (event.role === "user" || event.role === "assistant")) {
         if (!String(event.text || "").trim()) continue;
+        // One conversation can be recorded twice (Copilot writes chatSessions and a transcript
+        // for the same session); a repeat of the same message moments later is the same turn.
+        const dupKey = `${event.role}|${String(event.text).replace(/\s+/g, " ").trim().slice(0, 200)}`;
+        const prevTs = recent.get(dupKey);
+        if (prevTs != null && Math.abs(ts - prevTs) <= DUPLICATE_WINDOW_MS) continue;
+        recent.set(dupKey, ts);
         const turn = {
           sessionKey: group.key,
           turnKey: keys.turnKey({

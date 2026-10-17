@@ -4,7 +4,7 @@
 const crypto = require("crypto");
 
 const CHUNK = 400;
-const TRANSCRIPT_EDIT_AGENTS = new Set(["Claude Code", "Cursor", "Codex", "Antigravity"]);
+const TRANSCRIPT_EDIT_AGENTS = new Set(["Claude Code", "Cursor", "Codex", "Antigravity", "Copilot"]);
 
 function token() {
   return crypto.randomBytes(8).toString("hex");

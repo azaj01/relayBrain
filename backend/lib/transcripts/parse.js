@@ -231,6 +231,9 @@ function parseCodex(file) {
   return events;
 }
 
+// VS Code chatSessions .jsonl is a patch log: kind 0 = initial state, kind 1 = set the value
+// at path k, kind 2 = append v's items to the array at path k. New requests (with their
+// timestamp and message) and response parts arrive as kind 2, so it must not be skipped.
 function foldChatSessionPatches(rows) {
   let state = null;
   for (const step of rows) {
@@ -238,14 +241,21 @@ function foldChatSessionPatches(rows) {
       state = step.v;
       continue;
     }
-    if (!state || step.kind !== 1 || !Array.isArray(step.k)) continue;
+    if (!state || (step.kind !== 1 && step.kind !== 2) || !Array.isArray(step.k) || !step.k.length) continue;
     let current = state;
     for (let i = 0; i < step.k.length - 1; i += 1) {
       const key = step.k[i];
-      if (current[key] === undefined) current[key] = typeof step.k[i + 1] === "number" ? [] : {};
+      if (current[key] === undefined || current[key] === null) current[key] = typeof step.k[i + 1] === "number" ? [] : {};
       current = current[key];
     }
-    current[step.k[step.k.length - 1]] = step.v;
+    const last = step.k[step.k.length - 1];
+    if (step.kind === 1) {
+      current[last] = step.v;
+      continue;
+    }
+    if (!Array.isArray(current[last])) current[last] = [];
+    if (Array.isArray(step.v)) current[last].push(...step.v);
+    else if (step.v !== undefined) current[last].push(step.v);
   }
   return state;
 }
@@ -258,31 +268,130 @@ function parseCopilot(file) {
     if (!state) return [];
     const sessionId = state.sessionId || sessionIdFromFile(file);
     const start = toTs(state.creationDate, fileMtime(file));
+    // VS Code also writes GitHub.copilot-chat/transcripts/<same id>.jsonl, with real timestamps
+    // and tool calls, but it only starts partway through the session. This file then only
+    // contributes what came before it, or every prompt would appear twice.
+    const transcriptStart = copilotTranscriptStart(file);
     const events = [];
     (state.requests || []).forEach((request, index) => {
       const rendered = request?.result?.metadata?.renderedUserMessage;
-      const text = userRequest(extractText(rendered)) || (index === 0 ? String(state.customTitle || "").trim() : "");
-      if (!isRedacted(text)) events.push({ ts: start + index * 1000, role: "user", kind: "message", text, sessionId, index });
+      const text =
+        String(request?.message?.text || "").trim() ||
+        userRequest(extractText(rendered)) ||
+        (index === 0 ? String(state.customTitle || "").trim() : "");
+      // Requests carry their own time; creationDate + index is only a last resort.
+      const ts = toTs(request?.timestamp, start + index * 1000);
+      if (!isRedacted(text)) events.push({ ts, role: "user", kind: "message", text, sessionId, index });
       const assistant = extractText(request?.response || request?.result?.message);
       if (!isRedacted(assistant)) {
-        events.push({ ts: start + index * 1000 + 1, role: "assistant", kind: "message", text: assistant, sessionId, index });
+        events.push({ ts: toTs(request?.responseTimestamp, ts + 1), role: "assistant", kind: "message", text: assistant, sessionId, index });
       }
     });
-    return events;
+    return transcriptStart ? events.filter((e) => e.ts < transcriptStart) : events;
   }
-  const sessionId = sessionIdFromFile(file);
+  const started = rows.find((r) => r?.type === "session.start")?.data?.sessionId;
+  const sessionId = typeof started === "string" && started ? started : sessionIdFromFile(file);
   const events = [];
   rows.forEach((step, index) => {
     const ts = toTs(step.timestamp, fileMtime(file) + index * 1000);
     if (step.type === "user.message" && step.data?.content) {
       const text = extractText(step.data.content);
-      if (!isRedacted(text)) events.push({ ts, role: "user", kind: "message", text, sessionId, index });
+      // Copilot files terminal callbacks as user messages; nobody typed them.
+      if (!isRedacted(text) && !COPILOT_INJECTED.test(text)) events.push({ ts, role: "user", kind: "message", text, sessionId, index });
     } else if (step.type === "assistant.message" && step.data?.content) {
       const text = extractText(step.data.content);
       if (!isRedacted(text)) events.push({ ts, role: "assistant", kind: "message", text, sessionId, index });
+    } else if (step.type === "tool.execution_start" && COPILOT_EDIT_TOOLS.has(step.data?.toolName)) {
+      for (const edit of copilotEditDiffs(step.data.toolName, toolArgs(step.data.arguments))) {
+        events.push({
+          ts,
+          role: "tool",
+          kind: "code_edit",
+          text: `${step.data.toolName} ${path.basename(edit.filePath)}`,
+          file: path.basename(edit.filePath),
+          path: edit.filePath,
+          diff: edit.diff,
+          sessionId,
+          index,
+        });
+      }
     }
   });
   return events;
+}
+
+const COPILOT_INJECTED = /^\s*\[Terminal [0-9a-f-]+ notification:/i;
+
+/** Start time of the transcript twin of a chatSessions file, or null when there is none. */
+function copilotTranscriptStart(chatSessionFile) {
+  const twin = path.join(path.dirname(path.dirname(chatSessionFile)), "GitHub.copilot-chat", "transcripts", `${sessionIdFromFile(chatSessionFile)}.jsonl`);
+  const first = readJsonl(twin).find((r) => r?.type === "session.start");
+  if (!first) return null;
+  return toTs(first.data?.startTime || first.timestamp, null) || null;
+}
+
+// Copilot agent edit tools as named in GitHub.copilot-chat transcripts (VS Code), plus
+// the CLI's edit/create. Reads (read_file, grep_search, …) are deliberately absent.
+const COPILOT_EDIT_TOOLS = new Set([
+  "create_file",
+  "replace_string_in_file",
+  "multi_replace_string_in_file",
+  "insert_edit_into_file",
+  "apply_patch",
+  "edit_file",
+  "edit",
+  "create",
+]);
+
+function toolArgs(value) {
+  if (value && typeof value === "object") return value;
+  try {
+    return JSON.parse(String(value || "{}"));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Splits an apply_patch payload ("*** Begin Patch / *** Update File: <path> / … / *** End Patch")
+ * into one section per file. Shared by Copilot and Codex, which use the same format.
+ */
+function patchSections(input) {
+  const sections = [];
+  let current = null;
+  for (const line of String(input || "").split(/\r?\n/)) {
+    const header = line.match(/^\*\*\* (Add|Update|Delete) File: (.+?)\s*$/);
+    if (header) {
+      current = { op: header[1].toLowerCase(), filePath: header[2], lines: [] };
+      sections.push(current);
+      continue;
+    }
+    if (/^\*\*\* (Begin|End) Patch/.test(line) || /^\*\*\* End of File/.test(line)) continue;
+    if (current && !/^\*\*\* Move to:/.test(line)) current.lines.push(line);
+  }
+  return sections.map((s) => ({ op: s.op, filePath: s.filePath, diff: s.lines.join("\n") }));
+}
+
+function copilotEditDiffs(name, args) {
+  if (name === "apply_patch") return patchSections(args.input || args.patch || "").map(({ filePath, diff }) => ({ filePath, diff }));
+  if (name === "multi_replace_string_in_file") {
+    const byFile = new Map();
+    for (const r of Array.isArray(args.replacements) ? args.replacements : []) {
+      const filePath = r?.filePath || r?.path;
+      if (!filePath) continue;
+      const diff = makeUnifiedDiff(r.oldString ?? "", r.newString ?? "", path.basename(filePath));
+      byFile.set(filePath, byFile.has(filePath) ? `${byFile.get(filePath)}\n${diff}` : diff);
+    }
+    return [...byFile].map(([filePath, diff]) => ({ filePath, diff }));
+  }
+  const filePath = args.filePath || args.path || args.file_path;
+  if (!filePath) return [];
+  const label = path.basename(filePath);
+  if (args.oldString != null || args.newString != null || args.old_string != null || args.new_string != null) {
+    return [{ filePath, diff: makeUnifiedDiff(args.oldString ?? args.old_string ?? "", args.newString ?? args.new_string ?? "", label) }];
+  }
+  const written = args.content ?? args.code ?? args.file_text;
+  return [{ filePath, diff: written != null ? makeUnifiedDiff("", written, label) : "" }];
 }
 
 const ANTIGRAVITY_EDIT_TOOLS = EDIT_TOOL_SETS.antigravity;
@@ -393,4 +502,4 @@ function parseFile(agent, file) {
   }));
 }
 
-module.exports = { parseFile };
+module.exports = { parseFile, patchSections };
