@@ -18,6 +18,7 @@ function help() {
   relay init [path]        Wire hooks, MCP, and relay-os instructions (default: cwd)
   relay serve              Start API on 127.0.0.1:3001 and Mission Control on :3002
   relay serve --no-ui      Start API + coordinator only
+  relay serve --static     Serve the prebuilt Mission Control from the API port (default for npm installs)
   relay push               Send your dirty working-tree files to the shared room
   relay pull               Apply the host's current dirty files onto this clone
   relay status             Health check
@@ -66,11 +67,17 @@ async function waitForApi(url, ms = 30000) {
 
 async function serve(args) {
   const noUi = args.includes("--no-ui");
-  const forwarded = args.filter((a) => a !== "--no-ui");
+  const forwarded = args.filter((a) => a !== "--no-ui" && a !== "--static");
   const uiPort = process.env.RELAY_UI_PORT || "3002";
   const port = apiPort(forwarded);
   const apiOrigin = `http://127.0.0.1:${port}`;
   const children = [];
+  // An npm install ships Mission Control prebuilt (mission-control/out) and no Next.js,
+  // so the API serves the UI itself; a source checkout runs `next dev` as before.
+  const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
+  const hasStaticUi = fs.existsSync(path.join(root, "mission-control", "out", "index.html"));
+  const staticUi = !noUi && hasStaticUi && (args.includes("--static") || !fs.existsSync(nextBin));
+  const uiOrigin = staticUi ? `http://localhost:${port}` : `http://localhost:${uiPort}`;
 
   const api = spawn(process.execPath, [path.join(root, "backend", "server.js"), ...forwarded], {
     stdio: "inherit",
@@ -80,7 +87,7 @@ async function serve(args) {
     env: {
       ...process.env,
       RELAY_PORT: String(port),
-      RELAY_UI_ORIGIN: process.env.RELAY_UI_ORIGIN || `http://localhost:${uiPort}`,
+      RELAY_UI_ORIGIN: process.env.RELAY_UI_ORIGIN || uiOrigin,
     },
   });
   children.push(api);
@@ -98,8 +105,9 @@ async function serve(args) {
     if (!shuttingDown) shutdown(code || 0);
   });
 
-  if (!noUi) {
-    const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
+  if (staticUi) {
+    if (await waitForApi(`${apiOrigin}/api/health`)) console.log(`[relay] Mission Control → ${uiOrigin}`);
+  } else if (!noUi) {
     if (!fs.existsSync(nextBin)) {
       console.error("Mission Control is not installed — run npm install");
       shutdown(1);

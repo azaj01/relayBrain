@@ -100,12 +100,20 @@ Full setup (Windows/macOS/Linux, hosted FalkorDB, troubleshooting): [docs/MEMORY
 
 ## Quick start
 
+**Install** (Node 20+):
+
+```bash
+npm install -g relaybrain   # installs the `relay` CLI with Mission Control prebuilt
+relay graph up              # optional: FalkorDB memory graph in Docker
+relay graph enable
+```
+
 **Host** — the machine everyone else connects to:
 
 ```bash
 relay login              # GitHub identity (uses the gh CLI)
 relay clone <repo-url>   # clone + register workspace + install agent hooks
-relay serve              # API → 127.0.0.1:3001 · Mission Control → :3002
+relay serve              # npm install: everything on :3001 · source checkout: Mission Control on :3002
 ```
 
 Then open Mission Control → **Team → Share** to start a tunnel (Cloudflare Quick Tunnel / Tailscale Funnel / custom URL) and mint the invite link.
@@ -127,11 +135,12 @@ Now start agents as usual. Hooks claim and release locks automatically — nobod
 
 | Method | Command |
 |--------|---------|
+| npm | `npm install -g relaybrain` |
 | local dev | `npm i`, then `npm link` in this repo |
 | attach an existing repo | `relay add /path/to/repo` |
 | fresh clone | `relay clone <url> [dir]` |
 
-Requires **Node.js 18+** (20+ recommended). No hosted backend, no login server. The memory graph needs FalkorDB (`relay graph up`, Docker); without it, relay runs on files alone.
+Requires **Node.js 20+**. No hosted backend, no login server. The memory graph needs FalkorDB (`relay graph up`, Docker); without it, relay runs on files alone.
 
 </details>
 
@@ -237,7 +246,7 @@ Languages parsed for the dependency graph: TypeScript/JavaScript, Python, Go, Ru
 
 | | |
 |---|---|
-| **Required** | Node.js 18+ (20+ recommended), npm |
+| **Required** | Node.js 20+, npm |
 | **Bundled** | `express`, `cors`, `ws`, `@vscode/tree-sitter-wasm` · `next`, `react` (Mission Control) |
 | **Not needed** | MongoDB, Redis, Docker, a hosted backend, an account |
 | **Optional** | `gh` CLI for `relay login` · `cloudflared` / Tailscale Funnel / ngrok for cross-machine rooms · Docker or FalkorDB Cloud for the memory graph |

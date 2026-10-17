@@ -10,8 +10,7 @@ RUN npm ci
 COPY . .
 
 # Build Mission Control static export so backend/server.js serves both API and UI on one port
-ENV NEXT_PUBLIC_RELAY_API=""
-RUN npm run build -w mission-control || true
+RUN npm run build:ui
 
 EXPOSE 3001
 ENV RELAY_PORT=3001

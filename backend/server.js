@@ -34,6 +34,7 @@ const { harvest } = require("./lib/harvest");
 const { syncTranscriptsQueued, latestTranscriptMtime } = require("./lib/transcripts/sync");
 const { transcriptWatchRoots, discoverAll } = require("./lib/transcripts/discover");
 const { normalizeWorkspaceRoot, normalizeCompare } = require("./lib/transcripts/util");
+const { listDir, listGithubRepos } = require("./lib/localBrowse");
 const { ingest: ingestSupergraph } = require("./lib/supergraph");
 const { cloneRepo, addLocal, detectRemoteUrl } = require("./lib/cloneRepo");
 const { installProjectHooks, installGlobalHooks } = require("./lib/installHooks");
@@ -3457,6 +3458,14 @@ async function main() {
       return res.status(403).json({ error: "project_mismatch" });
     }
     res.json({ tasks: jsonContext(await listEvents(req.params.id, { limit: 1000 })).tasks });
+  });
+
+  app.get("/api/fs", requireLocal, async (req, res) => {
+    const { status, body } = await listDir(req.query.path ? String(req.query.path) : null);
+    res.status(status).json(body);
+  });
+  app.get("/api/github/repos", requireLocal, async (req, res) => {
+    res.json(await listGithubRepos({ refresh: req.query.refresh === "1" }));
   });
 
   const uiDist = path.join(__dirname, "..", "mission-control", "out");

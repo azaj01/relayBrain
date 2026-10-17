@@ -1,14 +1,48 @@
 {
-  "name": "relay",
-  "version": "0.1.0",
-  "private": true,
-  "description": "GitHub Desktop for AI agents — coordination, locks, and Mission Control.",
+  "name": "relaybrain",
+  "version": "0.2.0",
+  "description": "Coordination layer for parallel AI coding agents — file locks, patch sync, Mission Control, and a FalkorDB memory graph that tells every agent who is doing what, and why.",
+  "keywords": [
+    "ai-agents",
+    "multi-agent",
+    "coordination",
+    "agent-memory",
+    "falkordb",
+    "graph",
+    "mcp",
+    "claude-code",
+    "cursor",
+    "codex",
+    "copilot",
+    "file-locking"
+  ],
+  "homepage": "https://relay-brain.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prakrititz/relayBrain.git"
+  },
+  "bugs": {
+    "url": "https://github.com/prakrititz/relayBrain/issues"
+  },
+  "license": "MIT",
   "workspaces": [
     "mission-control"
   ],
   "bin": {
-    "relay": "cli/relay.js"
+    "relay": "cli/relay.js",
+    "relaybrain": "cli/relay.js"
   },
+  "files": [
+    "backend/",
+    "!backend/**/*.test.js",
+    "cli/",
+    "hooks/",
+    "mission-control/out/",
+    "scripts/falkor-rebuild.js",
+    "scripts/falkor-seed-demo.js",
+    "docker-compose.falkor.yml",
+    "docs/MEMORY-GRAPH.md"
+  ],
   "scripts": {
     "dev": "concurrently -n api,ui -c cyan,magenta \"node backend/server.js --port 3001\" \"npm run dev -w mission-control\"",
     "dev:api": "node backend/server.js --port 3001",
@@ -16,6 +50,8 @@
     "start": "node backend/server.js --port 3001",
     "coordinator": "node backend/coordinator/server.js",
     "test": "node scripts/run-tests.js",
+    "build:ui": "node scripts/build-ui.js",
+    "prepack": "node scripts/build-ui.js",
     "falkor:up": "docker compose -f docker-compose.falkor.yml up -d",
     "falkor:down": "docker compose -f docker-compose.falkor.yml down",
     "falkor:spike": "node scripts/falkor-spike.js",
