@@ -97,7 +97,8 @@ async function main() {
   console.log(`FalkorDB:  ${FALKOR_URL} (prefix: ${PREFIX})\n`);
 
   const serverProc = spawn(process.execPath, [path.join(ROOT, "backend", "server.js"), "--port", String(API_PORT)], {
-    cwd: ROOT,
+    // Not ROOT: relay treats its cwd as a workspace and would rewrite this repo's agent configs.
+    cwd: workspace,
     env,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
