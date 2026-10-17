@@ -21,7 +21,8 @@
     "falkor:spike": "node scripts/falkor-spike.js",
     "falkor:rebuild": "node scripts/falkor-rebuild.js",
     "falkor:seed-demo": "node scripts/falkor-seed-demo.js",
-    "test:e2e": "node scripts/e2e-full-test.js"
+    "test:e2e": "node scripts/e2e-full-test.js",
+    "test:e2e:room": "node scripts/e2e-room-test.js"
   },
   "dependencies": {
     "@vscode/tree-sitter-wasm": "^0.3.1",

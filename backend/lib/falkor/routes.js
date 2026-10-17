@@ -47,7 +47,11 @@ async function query(name, args) {
     try {
       return await askHost(room, name, args);
     } catch (err) {
-      if (!api.state.started) throw err;
+      if (!api.state.started) {
+        throw Object.assign(new Error(`room host unreachable (${err.message || err}) and this machine has no memory graph of its own`), {
+          status: 503,
+        });
+      }
       /* tunnel down: fall back to whatever this machine's own graph knows */
     }
   }

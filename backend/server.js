@@ -319,8 +319,19 @@ async function main() {
   // reconnects to the URL already on disk.
   let refreshGuestRoom = async (room) => room;
 
+  /** An existing socket already open, or still connecting, to this exact URL. */
+  function socketLive(sock, wsUrl) {
+    return Boolean(
+      sock && sock.relayUrl === wsUrl && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)
+    );
+  }
+
   function connectHostPatches(room) {
     if (!room?.url || room.role !== "guest") return;
+    const wsUrl = `${room.url.replace(/^http/, "ws").replace(/\/$/, "")}/ws/patches${
+      room.memberToken ? `?token=${encodeURIComponent(room.memberToken)}` : ""
+    }`;
+    if (socketLive(hostSocket, wsUrl)) return;
     if (hostRetryTimer) {
       clearTimeout(hostRetryTimer);
       hostRetryTimer = null;
@@ -332,16 +343,16 @@ async function main() {
         /* ignore */
       }
     }
-    const wsUrl = `${room.url.replace(/^http/, "ws").replace(/\/$/, "")}/ws/patches${
-      room.memberToken ? `?token=${encodeURIComponent(room.memberToken)}` : ""
-    }`;
+    let socket;
     try {
-      hostSocket = new WebSocket(wsUrl, {
+      socket = new WebSocket(wsUrl, {
         headers: {
           "ngrok-skip-browser-warning": "relay",
           ...(room.memberToken ? { "x-relay-room-token": room.memberToken } : {}),
         },
       });
+      socket.relayUrl = wsUrl;
+      hostSocket = socket;
     } catch (err) {
       console.warn(`[relay-room] could not open ${wsUrl}: ${err.message || err}`);
       scheduleRetry();
@@ -349,7 +360,7 @@ async function main() {
     }
     let retried = false;
     function scheduleRetry() {
-      if (retried) return;
+      if (retried || (socket && hostSocket !== socket)) return;
       retried = true;
       const wait = hostBackoffMs;
       hostBackoffMs = Math.min(HOST_BACKOFF_MAX_MS, Math.round(hostBackoffMs * 1.8));
@@ -379,6 +390,7 @@ async function main() {
     // failures (e.g. a stale/offline host returning a non-101 response)
     // as an uncaught exception and kills the whole `relay serve` process.
     hostSocket.on("error", (err) => {
+      if (hostSocket !== socket) return;
       console.warn(`[relay-room] host connection failed (${wsUrl}): ${err.message || err}`);
       scheduleRetry();
     });
@@ -459,6 +471,13 @@ async function main() {
 
   function connectHostControl(room) {
     if (!room?.url || room.role !== "guest") return;
+    const wsUrl = `${room.url.replace(/^http/, "ws").replace(/\/$/, "")}/ws/control${
+      room.memberToken ? `?token=${encodeURIComponent(room.memberToken)}` : ""
+    }`;
+    // Startup, guest-room refresh and the patches socket's retry all call this. Tearing
+    // down a socket that is already open or still connecting to the same host meant
+    // the control channel was closed before it could ever finish its handshake.
+    if (socketLive(controlSocket, wsUrl)) return;
     if (controlRetryTimer) {
       clearTimeout(controlRetryTimer);
       controlRetryTimer = null;
@@ -470,16 +489,16 @@ async function main() {
         /* ignore */
       }
     }
-    const wsUrl = `${room.url.replace(/^http/, "ws").replace(/\/$/, "")}/ws/control${
-      room.memberToken ? `?token=${encodeURIComponent(room.memberToken)}` : ""
-    }`;
+    let socket;
     try {
-      controlSocket = new WebSocket(wsUrl, {
+      socket = new WebSocket(wsUrl, {
         headers: {
           "ngrok-skip-browser-warning": "relay",
           ...(room.memberToken ? { "x-relay-room-token": room.memberToken } : {}),
         },
       });
+      socket.relayUrl = wsUrl;
+      controlSocket = socket;
     } catch (err) {
       console.warn(`[relay-room] control socket failed: ${err.message || err}`);
       scheduleControlRetry();
@@ -488,7 +507,9 @@ async function main() {
     roomControl.attach(controlSocket);
     let retried = false;
     function scheduleControlRetry() {
-      if (retried) return;
+      // A socket that has already been replaced must not schedule a reconnect: that
+      // reconnect would close the current, healthy socket and loop forever.
+      if (retried || (socket && controlSocket !== socket)) return;
       retried = true;
       const wait = controlBackoffMs;
       controlBackoffMs = Math.min(HOST_BACKOFF_MAX_MS, Math.round(controlBackoffMs * 1.8));
@@ -504,6 +525,7 @@ async function main() {
       if (controlRetryTimer.unref) controlRetryTimer.unref();
     }
     controlSocket.on("open", () => {
+      if (controlSocket !== socket) return;
       controlBackoffMs = 200;
       roomControl.send({ type: "join" });
       console.log(`[relay-room] control stream ${room.url}`);
@@ -526,6 +548,7 @@ async function main() {
       }
     });
     controlSocket.on("error", (err) => {
+      if (controlSocket !== socket) return;
       console.warn(`[relay-room] control failed: ${err.message || err}`);
       scheduleControlRetry();
     });
@@ -2750,8 +2773,11 @@ async function main() {
       ? loadRegistry().projects.find((p) => p.id === req.body.projectId) || currentProject()
       : currentProject();
     if (!project) return res.status(404).json({ error: "no_local_repo" });
-    const login = String(req.body?.login || "").trim();
-    if (!login) return res.status(400).json({ error: "login_required" });
+    // Same rule as the socket path: a member may only publish its own history. A remote
+    // caller is whoever its member token says; the login in the body is only trusted locally.
+    const remote = Boolean(req.roomMember) || isRemoteRequest(req);
+    const login = remote ? req.roomMember?.login || "" : String(req.body?.login || "").trim();
+    if (!login) return res.status(remote ? 401 : 400).json({ error: remote ? "member_token_required" : "login_required" });
     ingestPeerHistory(login, req.body?.snapshot, project);
     res.json({ ok: true });
   });
@@ -3456,8 +3482,26 @@ async function main() {
   const port = parsePort(process.argv);
   const bindHost = process.env.RELAY_BIND_HOST || "127.0.0.1";
   const server = http.createServer(app);
-  wss = new WebSocketServer({ server, path: "/ws/patches" });
-  wssControl = new WebSocketServer({ server, path: "/ws/control" });
+  // Two servers attached with `{ server, path }` both see every upgrade, and each rejects
+  // the other's path with a 400: /ws/control never connected and /ws/patches got a 400
+  // written into its upgraded socket. One upgrade handler routes by path instead.
+  wss = new WebSocketServer({ noServer: true });
+  wssControl = new WebSocketServer({ noServer: true });
+  server.on("upgrade", (req, socket, head) => {
+    let pathname = "";
+    try {
+      pathname = new URL(req.url, "http://relay.local").pathname;
+    } catch {
+      /* malformed request line */
+    }
+    const target = pathname === "/ws/patches" ? wss : pathname === "/ws/control" ? wssControl : null;
+    if (!target) {
+      socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    target.handleUpgrade(req, socket, head, (ws) => target.emit("connection", ws, req));
+  });
 
   /**
    * Identity is decided once, at the handshake, and never re-read from a frame.
