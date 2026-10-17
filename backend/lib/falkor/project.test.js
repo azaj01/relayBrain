@@ -3,7 +3,7 @@ const assert = require("node:assert");
 const keys = require("./keys");
 const { redact, storedText } = require("./redact");
 const { projectHistory, diffStats } = require("./project");
-const { demoHistory, WS, CLAUDE_SID, CURSOR_SID } = require("./fixtures");
+const { demoHistory, WS, wsPath, CLAUDE_SID, CURSOR_SID } = require("./fixtures");
 
 const CLAUDE = `Claude Code::${CLAUDE_SID}`;
 const CURSOR = `Cursor::${CURSOR_SID}`;
@@ -141,7 +141,7 @@ test("projector: 2000 events in under 50ms", () => {
       role: i % 3 === 0 ? "user" : i % 3 === 1 ? "assistant" : "tool",
       kind: i % 3 === 2 ? "code_edit" : "message",
       text: `event ${i} `.repeat(30),
-      path: `C:\\Users\\dev\\demo\\src\\f${i % 50}.ts`,
+      path: wsPath("src", `f${i % 50}.ts`),
       diff: "+a\n-b\n",
     });
   }
@@ -157,11 +157,11 @@ test("projector: filler prompts ('continue') defer to the request they continue"
   const p = projectHistory(
     [
       { ...base, id: "a", ts: 1, role: "user", kind: "message", text: "add dark mode to the settings page" },
-      { ...base, id: "b", ts: 2, role: "tool", kind: "code_edit", text: "Edit a.ts", path: "C:\\Users\\dev\\demo\\a.ts" },
+      { ...base, id: "b", ts: 2, role: "tool", kind: "code_edit", text: "Edit a.ts", path: wsPath("a.ts") },
       { ...base, id: "c", ts: 3, role: "user", kind: "message", text: "continue" },
-      { ...base, id: "d", ts: 4, role: "tool", kind: "code_edit", text: "Edit b.ts", path: "C:\\Users\\dev\\demo\\b.ts" },
+      { ...base, id: "d", ts: 4, role: "tool", kind: "code_edit", text: "Edit b.ts", path: wsPath("b.ts") },
       { ...base, id: "e", ts: 5, role: "user", kind: "message", text: "Yes!" },
-      { ...base, id: "f", ts: 6, role: "tool", kind: "code_edit", text: "Edit c.ts", path: "C:\\Users\\dev\\demo\\c.ts" },
+      { ...base, id: "f", ts: 6, role: "tool", kind: "code_edit", text: "Edit c.ts", path: wsPath("c.ts") },
     ],
     { workspacePath: WS }
   );

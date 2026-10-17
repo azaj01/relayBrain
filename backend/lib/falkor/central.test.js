@@ -6,6 +6,7 @@ const { FalkorClient } = require("./client");
 const { readConfig } = require("./config");
 const { writeProjection } = require("./write");
 const { projectHistory } = require("./project");
+const { WS, wsPath } = require("./fixtures");
 
 const URL = process.env.RELAY_FALKOR_TEST_URL;
 const live = { skip: URL ? false : "set RELAY_FALKOR_TEST_URL to run FalkorDB integration tests" };
@@ -48,11 +49,11 @@ test("live: revisions, explicit + unambiguous mentioned files, inferred session"
     const now = Date.parse("2026-10-16T10:00:00Z");
     const history = [
       { id: "1", agent: "Claude Code", ownerLogin: "alice", sessionId: "s1", ts: now - 60000, role: "user", kind: "message", text: "auth work" },
-      { id: "2", agent: "Claude Code", ownerLogin: "alice", sessionId: "s1", ts: now - 50000, role: "tool", kind: "code_edit", text: "Edit", path: "C:\\ws\\src\\auth.ts" },
-      { id: "3", agent: "Claude Code", ownerLogin: "alice", sessionId: "s1", ts: now - 40000, role: "tool", kind: "code_edit", text: "Edit", path: "C:\\ws\\a\\index.ts" },
-      { id: "4", agent: "Claude Code", ownerLogin: "alice", sessionId: "s1", ts: now - 30000, role: "tool", kind: "code_edit", text: "Edit", path: "C:\\ws\\b\\index.ts" },
+      { id: "2", agent: "Claude Code", ownerLogin: "alice", sessionId: "s1", ts: now - 50000, role: "tool", kind: "code_edit", text: "Edit", path: wsPath("src", "auth.ts") },
+      { id: "3", agent: "Claude Code", ownerLogin: "alice", sessionId: "s1", ts: now - 40000, role: "tool", kind: "code_edit", text: "Edit", path: wsPath("a", "index.ts") },
+      { id: "4", agent: "Claude Code", ownerLogin: "alice", sessionId: "s1", ts: now - 30000, role: "tool", kind: "code_edit", text: "Edit", path: wsPath("b", "index.ts") },
     ];
-    await writeProjection(c, pid, projectHistory(history, { workspacePath: "C:\\ws" }));
+    await writeProjection(c, pid, projectHistory(history, { workspacePath: WS }));
     const iso = new Date(now).toISOString();
     const rows = [
       { event_id: 1, kind: "decision", decision_id: "jwt", content: "Use JWT; touches auth.ts and index.ts", status: "open", agent_label: "Claude Code", user: "alice", ts: iso },

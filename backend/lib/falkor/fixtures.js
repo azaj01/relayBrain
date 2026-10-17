@@ -1,5 +1,11 @@
 // Synthetic events shaped like real unifyEvent output (no user data).
-const WS = "C:\\Users\\dev\\demo";
+const path = require("path");
+
+// A native absolute workspace, so path handling is exercised the way it runs on each OS.
+const WS = process.platform === "win32" ? "C:\\Users\\dev\\demo" : "/home/dev/demo";
+const wsPath = (...parts) => path.join(WS, ...parts);
+// Agents sometimes report Windows paths with forward slashes; on POSIX this is the same path.
+const slashed = (p) => p.split(path.sep).join("/");
 const CLAUDE_SID = "52b29a54-d8fb-4091-ab60-463ac73c9d6c";
 const CURSOR_SID = "3e62675d-9b0f-4d99-b17d-c1d875fe98dc";
 
@@ -34,7 +40,7 @@ function demoHistory() {
       kind: "code_edit",
       text: "Edit auth.ts",
       file: "auth.ts",
-      path: "C:/Users/dev/demo/src/Auth.ts",
+      path: slashed(wsPath("src", "Auth.ts")),
       diff: "--- a/auth.ts\n+++ b/auth.ts\n@@ -1,2 +1,3 @@\n-old\n+new\n+newer\n",
     }),
     ev({
@@ -45,7 +51,7 @@ function demoHistory() {
       kind: "code_edit",
       text: "Write navbar.css",
       file: "navbar.css",
-      path: "C:\\Users\\dev\\demo\\styles\\navbar.css",
+      path: wsPath("styles", "navbar.css"),
       diff: "+.nav{position:sticky}\n",
     }),
     ev({ agent: "Claude Code", sessionId: CLAUDE_SID, ts: 4000, role: "user", text: "also add refresh tokens, api_key=supersecretvalue123" }),
@@ -57,7 +63,7 @@ function demoHistory() {
       kind: "code_edit",
       text: "Edit auth.ts",
       file: "auth.ts",
-      path: "C:\\Users\\dev\\demo\\src\\auth.ts",
+      path: wsPath("src", "auth.ts"),
       diff: "+refresh\n",
     }),
     ev({
@@ -68,7 +74,7 @@ function demoHistory() {
       kind: "code_edit",
       text: "Write notes.md",
       file: "notes.md",
-      path: "C:\\Users\\dev\\other-repo\\notes.md",
+      path: path.join(path.dirname(WS), "other-repo", "notes.md"),
       diff: "+x\n",
     }),
     ev({ agent: "Antigravity", sessionId: "session", ts: 6000, role: "user", text: "what files do you see" }),
@@ -76,4 +82,4 @@ function demoHistory() {
   ];
 }
 
-module.exports = { demoHistory, WS, CLAUDE_SID, CURSOR_SID };
+module.exports = { demoHistory, WS, wsPath, CLAUDE_SID, CURSOR_SID };

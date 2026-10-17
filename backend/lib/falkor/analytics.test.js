@@ -6,12 +6,13 @@ const { FalkorClient } = require("./client");
 const { readConfig } = require("./config");
 const { writeProjection } = require("./write");
 const { projectHistory } = require("./project");
+const { WS, wsPath } = require("./fixtures");
 
 const URL = process.env.RELAY_FALKOR_TEST_URL;
 const live = { skip: URL ? false : "set RELAY_FALKOR_TEST_URL to run FalkorDB integration tests" };
 
 function edit(id, agent, sessionId, ts, file, login = "alice") {
-  return { id, agent, ownerLogin: login, sessionId, ts, role: "tool", kind: "code_edit", text: "Edit", path: `C:\\ws\\${file}` };
+  return { id, agent, ownerLogin: login, sessionId, ts, role: "tool", kind: "code_edit", text: "Edit", path: wsPath(...file.split("\\")) };
 }
 
 test("live: overlaps between agents, co-edit projection, pagerank + communities", live, async () => {
@@ -35,7 +36,7 @@ test("live: overlaps between agents, co-edit projection, pagerank + communities"
       edit("e5", "Cursor", "s2", t + 61_000, "src\\nav.ts", "bob"),
       edit("e6", "Cursor", "s3", t + 3_600_000, "src\\auth.ts", "bob"),
     ];
-    await writeProjection(c, pid, projectHistory(history, { workspacePath: "C:\\ws" }));
+    await writeProjection(c, pid, projectHistory(history, { workspacePath: WS }));
     const summary = await analytics.run(pid);
     await analytics.run(pid);
 

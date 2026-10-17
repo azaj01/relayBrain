@@ -1,0 +1,56 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux · Node ${{ matrix.node }} · FalkorDB
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    services:
+      falkordb:
+        # Pinned to the FalkorDB the suite was verified against (4.22.1). Bump deliberately:
+        # scripts/falkor-spike.js re-checks every Cypher feature the memory graph relies on.
+        image: falkordb/falkordb@sha256:b0bdcac2cbaff989e77cb0610439b7a9289e86de033ccbbd4368b66fb680ae7a
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      RELAY_FALKOR_TEST_URL: falkor://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - name: Tests (unit + FalkorDB integration)
+        run: npm test
+      - name: FalkorDB feature spike
+        run: node scripts/falkor-spike.js
+        env:
+          RELAY_FALKOR_URL: falkor://localhost:6379
+      - name: Type-check Mission Control
+        run: npx tsc --noEmit -p mission-control
+
+  windows:
+    name: Windows · Node 20 · unit
+    # Hooks and transcript paths are Windows-heavy; integration tests skip without a database.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test

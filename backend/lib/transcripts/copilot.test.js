@@ -15,7 +15,8 @@ const SID = "fcc51653-804f-4e4f-9330-347a42abd57c";
 const storage = path.join(root, "workspaceStorage", "129f00c0b424af65aacbf15570f3ecf2");
 const transcript = path.join(storage, "GitHub.copilot-chat", "transcripts", `${SID}.jsonl`);
 const chat = path.join(storage, "chatSessions", `${SID}.jsonl`);
-const WS = "C:\\Users\\dev\\demo";
+const { WS } = require("../falkor/fixtures");
+const S = path.sep;
 
 function writeRows(file, rows) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -23,21 +24,21 @@ function writeRows(file, rows) {
 }
 
 const T = (min) => new Date(Date.parse("2026-04-18T01:00:00Z") + min * 60000).toISOString();
-const patch = "*** Begin Patch\n*** Update File: C:\\Users\\dev\\demo\\Dockerfile\n@@\n+FROM python:3.11-slim\n*** Add File: C:\\Users\\dev\\demo\\run.sh\n+echo hi\n*** End Patch";
+const patch = `*** Begin Patch\n*** Update File: ${path.join(WS, "Dockerfile")}\n@@\n+FROM python:3.11-slim\n*** Add File: ${path.join(WS, "run.sh")}\n+echo hi\n*** End Patch`;
 
 writeRows(transcript, [
   { type: "session.start", data: { sessionId: SID, startTime: T(10) }, timestamp: T(10) },
   { type: "user.message", data: { content: "make a python file that converts the dataset" }, timestamp: T(11) },
   { type: "assistant.message", data: { content: "I'll create the converter." }, timestamp: T(11.5) },
-  { type: "tool.execution_start", data: { toolName: "create_file", arguments: { filePath: `${WS}\\convert.py`, content: "import json\nprint(1)\n" } }, timestamp: T(12) },
-  { type: "tool.execution_start", data: { toolName: "read_file", arguments: { filePath: `${WS}\\convert.py` } }, timestamp: T(12.2) },
+  { type: "tool.execution_start", data: { toolName: "create_file", arguments: { filePath: `${WS}${S}convert.py`, content: "import json\nprint(1)\n" } }, timestamp: T(12) },
+  { type: "tool.execution_start", data: { toolName: "read_file", arguments: { filePath: `${WS}${S}convert.py` } }, timestamp: T(12.2) },
   { type: "user.message", data: { content: "[Terminal 3ed3702d-ca6a-4619-ad6f-bc65e3635358 notification: command completed with exit code 0.]" }, timestamp: T(13) },
-  { type: "tool.execution_start", data: { toolName: "replace_string_in_file", arguments: JSON.stringify({ filePath: `${WS}\\convert.py`, oldString: "print(1)", newString: "print(2)" }) }, timestamp: T(14) },
+  { type: "tool.execution_start", data: { toolName: "replace_string_in_file", arguments: JSON.stringify({ filePath: `${WS}${S}convert.py`, oldString: "print(1)", newString: "print(2)" }) }, timestamp: T(14) },
   {
     type: "tool.execution_start",
     data: {
       toolName: "multi_replace_string_in_file",
-      arguments: { replacements: [{ filePath: `${WS}\\a.py`, oldString: "a", newString: "b" }, { filePath: `${WS}\\a.py`, oldString: "c", newString: "d" }, { filePath: `${WS}\\b.py`, oldString: "e", newString: "f" }] },
+      arguments: { replacements: [{ filePath: `${WS}${S}a.py`, oldString: "a", newString: "b" }, { filePath: `${WS}${S}a.py`, oldString: "c", newString: "d" }, { filePath: `${WS}${S}b.py`, oldString: "e", newString: "f" }] },
     },
     timestamp: T(15),
   },
@@ -120,8 +121,9 @@ test("hooks: Copilot edit tools match, and apply_patch claims the files inside t
   const re = new RegExp(`^(${EDIT.copilot})$`);
   for (const t of ["replace_string_in_file", "multi_replace_string_in_file", "create_file", "apply_patch", "edit", "create"]) assert.ok(re.test(t), t);
   for (const t of ["read_file", "run_in_terminal", "grep_search"]) assert.ok(!re.test(t), t);
-  assert.deepEqual(extractFilePaths({ toolName: "apply_patch", toolArgs: { input: patch } }), ["C:\\Users\\dev\\demo\\Dockerfile", "C:\\Users\\dev\\demo\\run.sh"]);
-  assert.deepEqual(extractFilePaths({ tool_name: "apply_patch", tool_input: { command: ["apply_patch", patch] } }), ["C:\\Users\\dev\\demo\\Dockerfile", "C:\\Users\\dev\\demo\\run.sh"]);
+  const targets = [path.join(WS, "Dockerfile"), path.join(WS, "run.sh")];
+  assert.deepEqual(extractFilePaths({ toolName: "apply_patch", toolArgs: { input: patch } }), targets);
+  assert.deepEqual(extractFilePaths({ tool_name: "apply_patch", tool_input: { command: ["apply_patch", patch] } }), targets);
 });
 
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
