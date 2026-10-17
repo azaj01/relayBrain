@@ -224,14 +224,41 @@ function parseCodex(file) {
       }
       return;
     }
-    if (step.type === "response_item" && step.payload?.type === "function_call") {
-      const name = step.payload.name || "";
+    // Codex sends apply_patch as a custom tool call whose `input` is the raw patch;
+    // older builds used a function_call. Either way the files are inside the patch text.
+    const call = step.type === "response_item" ? step.payload : null;
+    if (call && (call.type === "function_call" || call.type === "custom_tool_call")) {
+      const name = call.name || "";
       if (!CODEX_EDIT_TOOLS.has(name)) return;
       let args = {};
-      try {
-        args = JSON.parse(step.payload.arguments || "{}");
-      } catch {
-        args = {};
+      if (call.type === "custom_tool_call") {
+        args = { input: typeof call.input === "string" ? call.input : "" };
+      } else {
+        try {
+          args = JSON.parse(call.arguments || "{}");
+        } catch {
+          args = {};
+        }
+      }
+      const patchText = [args.input, args.patch, Array.isArray(args.command) ? args.command.join("\n") : args.command].find(
+        (v) => typeof v === "string" && v.includes("*** ")
+      );
+      const sections = patchText ? patchSections(patchText) : [];
+      if (sections.length) {
+        for (const s of sections) {
+          events.push({
+            ts,
+            role: "tool",
+            kind: "code_edit",
+            text: `${name} ${path.basename(s.filePath)}`,
+            file: path.basename(s.filePath),
+            path: s.filePath,
+            diff: s.diff,
+            sessionId,
+            index,
+          });
+        }
+        return;
       }
       const filePath = args.path || args.file_path || args.file || null;
       events.push({

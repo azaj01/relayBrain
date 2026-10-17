@@ -88,6 +88,27 @@ the session is derived from that file, so the two sides can't disagree.
 `backend/lib/falkor/sessionjoin.test.js` parses a real-format transcript for each agent with the actual parser, builds the lock
 id from that agent's documented hook payload, and asserts the two session keys are equal.
 
+#### Agent support
+
+| | Claude Code | Cursor | Codex | Copilot (VS Code agent) | Antigravity IDE |
+|---|---|---|---|---|---|
+| Turns (user + assistant) | ✅ | ✅ | ✅ | ✅ (transcript + chatSessions, deduped) | ✅ |
+| Edits from the transcript | ✅ Edit/Write/MultiEdit | ✅ Write/StrReplace/… | ✅ `apply_patch`, one edit per file in the patch | ✅ create_file, replace_string_in_file, multi_replace…, apply_patch | ✅ CODE_ACTION + planner TargetFile |
+| Edit → prompt (`PROMPTED_BY`) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Real timestamps | ✅ | ⚠️ minute precision, from `<timestamp>` in newer Cursor builds; older turns flagged synthetic | ✅ | ✅ | ✅ |
+| Lock ↔ session join | ✅ live-verified | ✅ via `transcript_path` | ✅ | ✅ (documented `sessionId`) | ✅ |
+| Hook claims every edit tool | ✅ | ✅ | ✅ incl. files inside `apply_patch` | ✅ incl. `replace_string_in_file`, `apply_patch` | ✅ |
+| MCP calls attributed (`RELAY_AGENT_LABEL`) | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+Measured on one developer machine's real history: Copilot 223/223 edits prompt-linked (from 0 parsed), Codex 144/144 (from 0
+parsed), Cursor 54/120 edits with real times (from 0).
+
+Not supported: the **older Antigravity desktop app** (`~/.gemini/antigravity/`) keeps conversations as binary protobuf
+(`conversations/<uuid>.pb`), with no JSONL transcript to read. The Antigravity IDE (`~/.gemini/antigravity-ide/`) is supported.
+
+Whether each agent actually *follows* the instruction to call `relay_session_brief` before editing unfamiliar files depends on
+the agent. Check it during a live run (#15).
+
 ## Agent tools (MCP)
 
 | Tool | What it does |
