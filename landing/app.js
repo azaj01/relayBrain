@@ -1,6 +1,7 @@
 const entries = [
   ["10:04", "Pony / Claude Code", "claim src/auth/session.ts — lock held 15s"],
-  ["10:06", "Unnath / Cursor", "blocked on src/auth/session.ts — waiting on @pony"],
+  ["10:06", "Unnath / Cursor", "blocked on src/auth/session.ts — @pony is \"migrating login to JWT\""],
+  ["10:07", "Memory graph", "brief for Cursor: 2 sessions touched auth/ today · 1 decision"],
   ["10:09", "Arjun / Codex", "claim lib/db/client.ts — dep graph: 4 dependents guarded"],
   ["10:11", "/.RELAY ROOM", "patch pushed → 3 peers on the same working state"],
   ["10:12", "New machine joined", "mirrored 4 live locks over the tunnel in 0.3s"]

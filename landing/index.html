@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description"
-    content="./relay is the coordination layer for AI coding agents — file locks, dependency-aware locking, and live patch sync across every machine on your team.">
+    content="./relay is the coordination layer for AI coding agents — file locks, dependency-aware locking, live patch sync, and a FalkorDB memory graph that tells every agent who is doing what, and why.">
   <title>./relay - GitHub Desktop for AI agents</title>
   <link rel="icon" type="image/png" href="logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,8 +25,9 @@
       <div class="nav-links">
         <a href="#demo">Watch the demo</a>
         <a href="how-it-works.html">How it works</a>
+        <a href="#memory-graph">Memory graph</a>
         <a href="docs.html">Docs</a>
-        <a href="https://github.com/prakrititz/relayBrain" target="_blank">Try now for free <span
+        <a href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Source on GitHub <span
             aria-hidden="true">↗</span></a>
       </div>
     </nav>
@@ -38,12 +39,12 @@
         <p class="eyebrow"><span class="status-dot"></span> The coordination layer for AI agents</p>
         <h1>Twelve agents.<br><span>One repository. Zero collisions.</span></h1>
         <p class="hero-subtitle">Claude Code, Cursor, Copilot, Codex, Antigravity — running in parallel, on four
-          machines, writing to the same files. ./relay locks, resolves, and syncs between them. GitHub Desktop for AI
-          agents.</p>
+          machines, writing to the same files. ./relay locks, resolves, and syncs between them, and remembers why
+          every change happened in a FalkorDB memory graph. GitHub Desktop for AI agents.</p>
         <div class="hero-actions">
-          <a class="button" href="https://github.com/prakrititz/relayBrain" target="_blank">Try now for free <span
-              aria-hidden="true">↗</span></a>
-          <a class="button" href="how-it-works.html">See how it works</a>
+          <a class="button" href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Get the source
+            <span aria-hidden="true">↗</span></a>
+          <a class="button" href="#memory-graph">See the memory graph</a>
         </div>
       </div>
 
@@ -255,8 +256,8 @@
         <h2>You are the server.<br>You are the client.</h2>
       </div>
       <p class="protocol-intro">None of this needs hosted infrastructure. One person on the team runs
-        <code>relay serve</code> — that machine is the host. Everyone else connects over an ngrok tunnel, straight to
-        that laptop. Nothing lives on infrastructure you do not own.</p>
+        <code>relay serve</code> — that machine is the host. Everyone else connects over a tunnel (ngrok or
+        Cloudflare), straight to that laptop. Nothing lives on infrastructure you do not own.</p>
       <div class="compiler-flow" aria-label="./relay room topology">
         <div class="flow-column">
           <p class="eyebrow">Your machine</p>
@@ -275,11 +276,12 @@
           <p class="eyebrow">Teammates</p>
           <code>their own filesystem</code>
           <code>their own agents</code>
-          <code>ngrok tunnel</code>
+          <code>ngrok / Cloudflare tunnel</code>
           <code>relay pull</code>
         </div>
       </div>
-      <p class="protocol-note">No database. No account. No cloud index. Your laptop is the whole backend.</p>
+      <p class="protocol-note">No account. No cloud index. Your laptop is the whole backend — the memory graph is one
+        FalkorDB container on the host, and teammates query it through the room.</p>
     </section>
 
     <section class="memory-files shell section">
@@ -306,9 +308,42 @@
       </div>
     </section>
 
+    <section class="memory-files shell section" id="memory-graph">
+      <div class="memory-copy">
+        <div class="section-index">05 / Memory graph · FalkorDB</div>
+        <h2>Locks say no.<br>The graph says why.</h2>
+        <p>A lock stops two agents writing one file. It doesn't tell the blocked agent what the other one is doing,
+          what was decided, or which prompt made the code look this way. ./relay turns every agent session, prompt,
+          edit, block and decision — across every agent and teammate — into one FalkorDB graph, and hands it back to
+          agents before and during their work.</p>
+        <ul>
+          <li><span>Context at the conflict</span> A denied lock quotes what the holder is working on.</li>
+          <li><span>Context before acting</span> <code>relay_session_brief</code> briefs any agent on the files it's
+            about to touch.</li>
+          <li><span>Every change explained</span> Each edit links to the request behind it — no agent has to report
+            anything.</li>
+          <li><span>Graph algorithms as tools</span> PageRank over co-edits finds the hotspots; every answer ships its
+            Cypher.</li>
+        </ul>
+      </div>
+      <div class="file-tree" aria-label="A denied lock that explains itself">
+        <div class="terminal-bar"><span></span><span>cursor · pre-tool hook</span></div>
+        <pre><span>✗ write denied — src/auth/session.ts</span>
+  locked by <b>Claude Code</b> <i># @pony</i>
+  They're working on:
+  <b>"migrate the login flow to JWT"</b> <i># 2 min ago</i>
+
+<span>(:Edit)-[:PROMPTED_BY]->(:Turn)</span>
+MATCH (c:Contention)-[:ON]->(f:File {key:$file})
+MATCH (c)-[:HELD_BY]->(s:Session)
+RETURN s.intent, c.attempts</pre>
+        <div class="terminal-command"><span>$</span> relay graph up &amp;&amp; relay graph enable<strong>✓ memory graph on</strong></div>
+      </div>
+    </section>
+
     <section class="pseudo-commands shell section" id="get-started">
       <div class="section-heading" style="margin-bottom: 50px;">
-        <div class="section-index">05 / How to get started</div>
+        <div class="section-index">06 / How to get started</div>
         <h2>Two commands<br>on the host.</h2>
       </div>
       <p class="protocol-intro" style="margin-left: 0; margin-top: 0; margin-bottom: 50px;">Clone the repo, link the
@@ -317,13 +352,15 @@
 
       <div class="file-tree" aria-label="Install ./relay" style="margin-bottom: 50px;">
         <div class="terminal-bar"><span></span><span>host</span></div>
-        <pre><span>$ npm install &amp;&amp; npm link</span>   <i># the relay CLI, Node 18+</i>
+        <pre><span>$ npm install &amp;&amp; npm link</span>   <i># the relay CLI, Node 20+</i>
 <span>$ relay login</span>              <i># GitHub identity, via the gh CLI</i>
 <span>$ relay clone &lt;repo-url&gt;</span>   <i># clone + register + install agent hooks</i>
+<span>$ relay graph up</span>           <i># optional: FalkorDB memory graph (Docker)</i>
+<span>$ relay graph enable</span>       <i># switch relay onto the graph</i>
 <span>$ relay serve</span>              <i># API :3001 · Mission Control :3002</i></pre>
         <div class="terminal-command"><span>$</span> <a href="https://github.com/prakrititz/relayBrain" target="_blank"
             rel="noopener" style="color: inherit; text-decoration: none;">github.com/prakrititz/relayBrain
-            ↗</a><strong>v0.1.0</strong></div>
+            ↗</a><strong>MIT · open source</strong></div>
       </div>
 
       <p class="protocol-intro" style="margin-left: 0; margin-top: 0; margin-bottom: 50px;">Then open Mission Control →
@@ -364,7 +401,7 @@
 
     <section class="features shell section">
       <div class="section-heading">
-        <div class="section-index">06 / Built for parallel agents</div>
+        <div class="section-index">07 / Built for parallel agents</div>
         <h2>Conflicts prevented,<br>not discovered.</h2>
       </div>
       <div class="feature-grid">
@@ -384,6 +421,14 @@
           <p class="eyebrow">Mission Control</p>
           <h3>Every agent on every machine, on one live board.</h3>
         </article>
+        <article><span>05</span>
+          <p class="eyebrow">Memory graph · FalkorDB</p>
+          <h3>Who did what, and why — sessions, prompts and edits in one graph.</h3>
+        </article>
+        <article><span>06</span>
+          <p class="eyebrow">Context at the conflict</p>
+          <h3>A blocked agent learns what the holder is doing, not just "no".</h3>
+        </article>
       </div>
       <p class="protocol-note" style="margin-top: 40px;"><a href="how-it-works.html"
           style="text-decoration: underline;">Full feature list and architecture ↗</a></p>
@@ -398,7 +443,7 @@
       <div class="shell final-cta-inner">
         <p class="eyebrow">The layer is ready</p>
         <h2>Do not just add more agents.<br>Just relay.it</h2>
-        <a class="button button-large" href="https://github.com/prakrititz/relayBrain" target="_blank">Try now for free
+        <a class="button button-large" href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Get the source on GitHub
           <span aria-hidden="true">↗</span></a>
       </div>
     </section>
@@ -407,7 +452,7 @@
   <footer class="footer shell">
     <a class="wordmark" href="#top"><img src="logo.png" alt="" class="inline-logo" /> ./relay</a>
     <p>The coordination layer for AI agents.</p>
-    <p>© 2026 ./relay</p>
+    <p><a href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Source on GitHub ↗</a> · © 2026 ./relay</p>
   </footer>
 
   <script src="brain_animation.js"></script>
