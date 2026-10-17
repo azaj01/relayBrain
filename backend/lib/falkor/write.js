@@ -88,15 +88,60 @@ WHERE NOT (p)-[:SAME_CHANGE]->()
 MATCH (t:Edit {source: 'transcript'})-[:MODIFIED]->(f)
 MATCH (t)-[:BY]->(a)
 WHERE abs(t.ts - p.ts) <= $windowMs
-RETURN p.key AS patchKey, t.key AS editKey, abs(t.ts - p.ts) AS gap`;
+RETURN p.key AS patchKey, t.key AS editKey, abs(t.ts - p.ts) AS gap,
+       p.diffHead AS patchDiff, t.diffHead AS editDiff, coalesce(t.tsSynthetic, false) AS synthetic`;
 
 const LINK_SAME_CHANGE = `
 UNWIND $rows AS r
 MATCH (p:Edit {key: r.patchKey})
 MATCH (t:Edit {key: r.editKey})
 MERGE (p)-[s:SAME_CHANGE]->(t)
-SET s.gapMs = r.gap
+SET s.gapMs = r.gap, s.method = r.method
 RETURN count(s) AS n`;
+
+const SAME_CHANGE_EXACT_MS = 15_000;
+const SAME_CHANGE_CONTENT_MS = 10 * 60 * 1000;
+
+function addedLines(diff) {
+  const out = new Set();
+  for (const line of String(diff || "").split("\n")) {
+    if (!line.startsWith("+") || line.startsWith("+++")) continue;
+    const s = line.slice(1).trim();
+    if (s.length >= 8) out.add(s);
+  }
+  return out;
+}
+
+/**
+ * Picks the transcript edit each watcher patch duplicates: the nearest one within 15 s, or,
+ * when transcript times are approximate (Cursor's minute-precision stamps), one within 10 min
+ * that added the same lines.
+ */
+function matchSameChange(candidates) {
+  const byPatch = new Map();
+  for (const c of candidates) {
+    if (!byPatch.has(c.patchKey)) byPatch.set(c.patchKey, []);
+    byPatch.get(c.patchKey).push(c);
+  }
+  const links = [];
+  for (const list of byPatch.values()) {
+    const timed = list.filter((c) => c.gap <= SAME_CHANGE_EXACT_MS).sort((a, b) => a.gap - b.gap)[0];
+    if (timed) {
+      links.push({ patchKey: timed.patchKey, editKey: timed.editKey, gap: timed.gap, method: "time" });
+      continue;
+    }
+    const patchLines = addedLines(list[0].patchDiff);
+    if (!patchLines.size) continue;
+    let best = null;
+    for (const c of list) {
+      let shared = 0;
+      for (const l of addedLines(c.editDiff)) if (patchLines.has(l)) shared += 1;
+      if (shared && (!best || shared > best.shared || (shared === best.shared && c.gap < best.gap))) best = { ...c, shared };
+    }
+    if (best) links.push({ patchKey: best.patchKey, editKey: best.editKey, gap: best.gap, method: "content" });
+  }
+  return links;
+}
 
 const EDIT_FILES = `
 UNWIND $rows AS r
@@ -219,13 +264,9 @@ async function writeProjection(client, projectId, projection) {
     "k"
   );
   if (pairs.length) {
-    const candidates = await each(client, projectId, SAME_CHANGE, pairs, { windowMs: 15_000 });
-    const best = new Map();
-    for (const c of candidates) {
-      const prev = best.get(c.patchKey);
-      if (!prev || c.gap < prev.gap) best.set(c.patchKey, c);
-    }
-    if (best.size) await each(client, projectId, LINK_SAME_CHANGE, [...best.values()]);
+    const candidates = await each(client, projectId, SAME_CHANGE, pairs, { windowMs: SAME_CHANGE_CONTENT_MS });
+    const links = matchSameChange(candidates);
+    if (links.length) await each(client, projectId, LINK_SAME_CHANGE, links);
   }
 
   return {
@@ -237,4 +278,4 @@ async function writeProjection(client, projectId, projection) {
   };
 }
 
-module.exports = { writeProjection, each, chunks, dedupe, token };
+module.exports = { writeProjection, each, chunks, dedupe, token, matchSameChange };

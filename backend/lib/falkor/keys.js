@@ -73,9 +73,13 @@ function overlapKey(fk, editA, editB) {
   return `o_${hash([fk, a, b])}`;
 }
 
-/** Cursor/Claude/Codex fall back to `mtime + index*1000` (fractional ms); Copilot always synthesizes. */
-function tsSynthetic(ts, label) {
-  return !Number.isInteger(Number(ts)) || label === "Copilot";
+/**
+ * Parsers record whether each event's time was in the transcript (event.tsSynthetic).
+ * History stored before they did falls back to the old tell: `mtime + index*1000` is fractional.
+ */
+function tsSynthetic(ts, flag) {
+  if (typeof flag === "boolean") return flag;
+  return !Number.isInteger(Number(ts));
 }
 
 module.exports = {

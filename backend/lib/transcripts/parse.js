@@ -5,6 +5,8 @@ const {
   isRedacted,
   clip,
   toTs,
+  realTs,
+  cursorStampTs,
   fileMtime,
   makeUnifiedDiff,
 } = require("./util");
@@ -68,10 +70,17 @@ function parseCursor(file) {
   const base = fileMtime(file);
   const sessionId = sessionIdFromFile(file);
   const events = [];
+  const real = new Map();
+  // Rows have no timestamps; a user turn's <timestamp> anchors it and the rows that follow.
+  let anchor = null;
   rows.forEach((step, index) => {
-    const ts = toTs(step.timestamp || step.ts, base + index * 1000);
     const role = step.role || step.message?.role;
     const content = step.message?.content;
+    const own = realTs(step.timestamp || step.ts);
+    const stamp = role === "user" ? cursorStampTs(extractText(content)) : null;
+    if (stamp != null) anchor = { ts: stamp, index };
+    const ts = own ?? (anchor ? anchor.ts + (index - anchor.index) * 1000 : base + index * 1000);
+    real.set(index, own != null || anchor != null);
     if (role === "user") {
       const text = userQuery(extractText(content));
       if (!isRedacted(text)) events.push({ ts, role: "user", kind: "message", text, sessionId, index });
@@ -109,6 +118,12 @@ function parseCursor(file) {
       }
     }
   });
+  return markReal(events, real);
+}
+
+/** Tags each event with whether its row's time was recorded (true) or estimated (false). */
+function markReal(events, real) {
+  for (const e of events) e.tsSynthetic = !real.get(e.index);
   return events;
 }
 
@@ -147,11 +162,13 @@ function parseClaude(file) {
   const rows = readJsonl(file);
   const fallbackSession = sessionIdFromFile(file);
   const events = [];
+  const real = new Map();
   rows.forEach((step, index) => {
     if (step.type !== "user" && step.type !== "assistant") return;
     if (step.isMeta) return;
     const sessionId = step.sessionId || fallbackSession;
     const ts = toTs(step.timestamp, fileMtime(file) + index * 1000);
+    real.set(index, realTs(step.timestamp) != null);
     const content = step.message?.content;
     const parts = Array.isArray(content) ? content : [];
 
@@ -185,7 +202,7 @@ function parseClaude(file) {
       }
     }
   });
-  return events;
+  return markReal(events, real);
 }
 
 function parseCodex(file) {
@@ -194,8 +211,10 @@ function parseCodex(file) {
   const meta = rows.find((r) => r?.type === "session_meta")?.payload?.id;
   const sessionId = typeof meta === "string" && meta ? meta : sessionIdFromTranscript("Codex", file);
   const events = [];
+  const real = new Map();
   rows.forEach((step, index) => {
     const ts = toTs(step.timestamp, fileMtime(file) + index * 1000);
+    real.set(index, realTs(step.timestamp) != null);
     if (step.type === "event_msg") {
       const p = step.payload || {};
       if (p.type === "user_message" && !isRedacted(p.message)) {
@@ -228,7 +247,7 @@ function parseCodex(file) {
       });
     }
   });
-  return events;
+  return markReal(events, real);
 }
 
 // VS Code chatSessions .jsonl is a patch log: kind 0 = initial state, kind 1 = set the value
@@ -273,7 +292,9 @@ function parseCopilot(file) {
     // contributes what came before it, or every prompt would appear twice.
     const transcriptStart = copilotTranscriptStart(file);
     const events = [];
+    const real = new Map();
     (state.requests || []).forEach((request, index) => {
+      real.set(index, realTs(request?.timestamp) != null);
       const rendered = request?.result?.metadata?.renderedUserMessage;
       const text =
         String(request?.message?.text || "").trim() ||
@@ -287,13 +308,16 @@ function parseCopilot(file) {
         events.push({ ts: toTs(request?.responseTimestamp, ts + 1), role: "assistant", kind: "message", text: assistant, sessionId, index });
       }
     });
+    markReal(events, real);
     return transcriptStart ? events.filter((e) => e.ts < transcriptStart) : events;
   }
   const started = rows.find((r) => r?.type === "session.start")?.data?.sessionId;
   const sessionId = typeof started === "string" && started ? started : sessionIdFromFile(file);
   const events = [];
+  const real = new Map();
   rows.forEach((step, index) => {
     const ts = toTs(step.timestamp, fileMtime(file) + index * 1000);
+    real.set(index, realTs(step.timestamp) != null);
     if (step.type === "user.message" && step.data?.content) {
       const text = extractText(step.data.content);
       // Copilot files terminal callbacks as user messages; nobody typed them.
@@ -317,7 +341,7 @@ function parseCopilot(file) {
       }
     }
   });
-  return events;
+  return markReal(events, real);
 }
 
 const COPILOT_INJECTED = /^\s*\[Terminal [0-9a-f-]+ notification:/i;
@@ -444,8 +468,10 @@ function parseAntigravity(file) {
   // PLANNER_RESPONSE that requested it always carries `TargetFile`. Remembering
   // the last requested target lets the two halves be stitched back together.
   let pendingTarget = null;
+  const real = new Map();
   rows.forEach((step, index) => {
     const ts = toTs(step.created_at || step.timestamp, fileMtime(file) + index * 1000);
+    real.set(index, realTs(step.created_at || step.timestamp) != null);
     if (step.type === "USER_INPUT" && step.content) {
       const text = userRequest(step.content);
       if (!isRedacted(text)) events.push({ ts, role: "user", kind: "message", text, sessionId, index });
@@ -484,7 +510,7 @@ function parseAntigravity(file) {
     // chatter. Filing them as code_edit is what put files the agent merely
     // looked at into the Code Edits panel.
   });
-  return events;
+  return markReal(events, real);
 }
 
 function parseFile(agent, file) {

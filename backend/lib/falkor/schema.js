@@ -2,7 +2,7 @@ const { ConstraintType, EntityType } = require("falkordb");
 
 const SCHEMA_VERSION = 1;
 // Bump when projector/key logic changes in a way that would re-key existing nodes.
-const INGEST_VERSION = 5;
+const INGEST_VERSION = 6;
 
 const KEYED_LABELS = ["Person", "Agent", "Session", "Turn", "Edit", "File", "Decision", "Task", "Contention", "Overlap", "Meta"];
 

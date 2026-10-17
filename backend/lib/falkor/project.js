@@ -123,7 +123,7 @@ function projectHistory(history, opts = {}) {
           kind: "message",
           text: storedText(event.text, TURN_TEXT_MAX, storeText),
           seq: seq++,
-          tsSynthetic: keys.tsSynthetic(event.ts, event.agent),
+          tsSynthetic: keys.tsSynthetic(event.ts, event.tsSynthetic),
         };
         if (event.role === "user") {
           lastUser = { ...turn, raw: event.text };
@@ -164,7 +164,7 @@ function projectHistory(history, opts = {}) {
           diffHead: storeText ? clip(redact(event.diff || ""), DIFF_HEAD_MAX) : null,
           added: stats.added,
           removed: stats.removed,
-          tsSynthetic: keys.tsSynthetic(event.ts, event.agent),
+          tsSynthetic: keys.tsSynthetic(event.ts, event.tsSynthetic),
           promptKey: prompt ? prompt.turnKey : null,
           promptGap,
           promptStale: promptGap != null && promptGap > STALE_PROMPT_MS,

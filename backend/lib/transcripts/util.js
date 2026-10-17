@@ -158,6 +158,29 @@ function fileMtime(file) {
   }
 }
 
+/** A timestamp the transcript actually recorded, or null (so callers can say theirs is a guess). */
+function realTs(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? (value < 1e12 ? value * 1000 : value) : null;
+  const parsed = Date.parse(String(value));
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Cursor rows carry no timestamps, but newer Cursor builds prefix each user message with
+ * <timestamp>Saturday, Aug 22, 2026, 3:41 PM (UTC+5:30)</timestamp>. Minute precision.
+ */
+function cursorStampTs(text) {
+  const m = String(text || "").match(/<timestamp>\s*([^<]+?)\s*<\/timestamp>/i);
+  if (!m) return null;
+  const cleaned = m[1]
+    .replace(/^[A-Za-z]+,\s*/, "")
+    .replace(/\s*\(UTC\s*([+-])?(\d{1,2})(?::?(\d{2}))?\)\s*$/i, (_, sign, h, mm) => ` GMT${sign || "+"}${h.padStart(2, "0")}${mm || "00"}`)
+    .replace(/\s*\(UTC\)\s*$/i, " GMT");
+  const parsed = Date.parse(cleaned);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 function toTs(value, fallback = Date.now()) {
   if (value == null || value === "") return fallback;
   if (typeof value === "number" && Number.isFinite(value)) {
@@ -265,6 +288,8 @@ module.exports = {
   mostRecentFile,
   fileMtime,
   toTs,
+  realTs,
+  cursorStampTs,
   eventId,
   clip,
   isRedacted,

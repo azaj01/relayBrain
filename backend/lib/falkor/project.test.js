@@ -46,10 +46,11 @@ test("keys: contention retries inside 10s collapse to one key", () => {
   assert.equal(keys.overlapKey("f", "e1", "e2"), keys.overlapKey("f", "e2", "e1"));
 });
 
-test("keys: synthetic timestamps detected", () => {
-  assert.equal(keys.tsSynthetic(1787214584994.685, "Cursor"), true);
-  assert.equal(keys.tsSynthetic(1786828212080, "Claude Code"), false);
-  assert.equal(keys.tsSynthetic(1786828212080, "Copilot"), true);
+test("keys: the parser's own flag wins; older history falls back to the fractional-ms tell", () => {
+  assert.equal(keys.tsSynthetic(1786828212080, true), true);
+  assert.equal(keys.tsSynthetic(1787214584994.685, false), false);
+  assert.equal(keys.tsSynthetic(1787214584994.685, undefined), true);
+  assert.equal(keys.tsSynthetic(1786828212080, undefined), false);
 });
 
 test("redact: secrets removed, prose kept", () => {

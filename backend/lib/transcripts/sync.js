@@ -25,6 +25,7 @@ function unifyEvent(raw, agent, ownerLogin) {
     path: raw.path || null,
     diff: raw.diff || "",
     transcriptPath: raw.transcriptPath || null,
+    tsSynthetic: raw.tsSynthetic === true,
   };
 }
 
