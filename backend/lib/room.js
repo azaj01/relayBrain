@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const { homeRelayDir } = require("./paths");
 const { normalizeWorkspaceRoot } = require("./transcripts/util");
 
@@ -159,24 +159,40 @@ async function waitForNgrok(timeoutMs = 20000) {
 }
 
 let ngrokChild = null;
+let cloudflaredChild = null;
+let cloudflaredUrl = null;
 let ensureInFlight = null;
 let lastSpawnAt = 0;
 let inspectorMisses = 0;
 
-function ngrokAlive() {
-  if (!ngrokChild?.pid) return false;
+function childAlive(child) {
+  if (!child?.pid) return false;
   try {
-    process.kill(ngrokChild.pid, 0);
+    process.kill(child.pid, 0);
     return true;
   } catch {
-    ngrokChild = null;
     return false;
   }
 }
 
-function killNgrok() {
-  const child = ngrokChild;
-  ngrokChild = null;
+function ngrokAlive() {
+  if (!childAlive(ngrokChild)) {
+    ngrokChild = null;
+    return false;
+  }
+  return true;
+}
+
+function cloudflaredAlive() {
+  if (!childAlive(cloudflaredChild)) {
+    cloudflaredChild = null;
+    cloudflaredUrl = null;
+    return false;
+  }
+  return true;
+}
+
+function killProcess(child) {
   if (!child?.pid) return;
   try {
     if (process.platform === "win32") {
@@ -191,6 +207,103 @@ function killNgrok() {
     }
   } catch {
     /* already gone */
+  }
+}
+
+function killNgrok() {
+  const child = ngrokChild;
+  ngrokChild = null;
+  killProcess(child);
+}
+
+function killCloudflared() {
+  const child = cloudflaredChild;
+  cloudflaredChild = null;
+  cloudflaredUrl = null;
+  killProcess(child);
+}
+
+const TRYCLOUDFLARE_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com\b/i;
+
+function spawnCloudflared(port, timeoutMs = 15000) {
+  if (cloudflaredAlive() && cloudflaredUrl) return Promise.resolve(cloudflaredUrl);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (url) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(url || null);
+    };
+    const timer = setTimeout(() => finish(cloudflaredUrl), timeoutMs);
+    if (timer.unref) timer.unref();
+    try {
+      const child = spawn(
+        "cloudflared",
+        ["tunnel", "--url", `http://127.0.0.1:${port}`, "--no-autoupdate"],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          detached: true,
+          shell: false,
+        }
+      );
+      const onChunk = (chunk) => {
+        const m = String(chunk || "").match(TRYCLOUDFLARE_RE);
+        if (m) {
+          cloudflaredUrl = m[0];
+          finish(cloudflaredUrl);
+        }
+      };
+      child.stdout?.on("data", onChunk);
+      child.stderr?.on("data", onChunk);
+      child.on("error", () => {
+        if (cloudflaredChild === child) {
+          cloudflaredChild = null;
+          cloudflaredUrl = null;
+        }
+        finish(null);
+      });
+      child.on("exit", () => {
+        if (cloudflaredChild === child) {
+          cloudflaredChild = null;
+          cloudflaredUrl = null;
+        }
+        finish(null);
+      });
+      if (child.pid) {
+        child.unref();
+        cloudflaredChild = child;
+      } else {
+        finish(null);
+      }
+    } catch {
+      finish(null);
+    }
+  });
+}
+
+function tryTailscaleFunnel(port) {
+  try {
+    const st = spawnSync("tailscale", ["status", "--json"], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 3000,
+    });
+    if (st.error || st.status !== 0) return null;
+    const info = JSON.parse(st.stdout || "{}");
+    if (info.BackendState !== "Running") return null;
+    const dns = String(info.Self?.DNSName || "").replace(/\.$/, "");
+    if (!dns) return null;
+    const fn = spawnSync("tailscale", ["funnel", "--bg", String(port)], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 5000,
+    });
+    if (fn.error || fn.status !== 0) return null;
+    return `https://${dns}`;
+  } catch {
+    return null;
   }
 }
 
@@ -226,7 +339,7 @@ function spawnNgrok(port) {
 }
 
 const NGROK_HINT =
-  "ngrok is installed but has no authtoken yet. Sign up at https://dashboard.ngrok.com/signup, copy the token from https://dashboard.ngrok.com/get-started/your-authtoken, run `ngrok config add-authtoken <token>`, keep `relay serve` running, then click Share again. Or in another terminal: `ngrok http 3001` and paste the https Forwarding URL.";
+  "No tunnel provider could be started. Install Cloudflare Quick Tunnels (`winget install Cloudflare.cloudflared` / `brew install cloudflared` — zero-signup), enable Tailscale Funnel (`tailscale funnel 3001`), set RELAY_PUBLIC_URL=<https://your-host>, or paste any forwarding URL in the Team tab.";
 
 async function listedTunnels() {
   try {
@@ -236,12 +349,20 @@ async function listedTunnels() {
   }
 }
 
+function activeTunnelUrl() {
+  if (process.env.RELAY_PUBLIC_URL) return String(process.env.RELAY_PUBLIC_URL).trim().replace(/\/$/, "");
+  if (cloudflaredAlive() && cloudflaredUrl) return cloudflaredUrl;
+  return null;
+}
+
 /**
- * Returns a reachable public URL for this API, restarting ngrok when the
- * previous tunnel has died (VPN change, laptop sleep, token recycle).
+ * Returns a reachable public URL for this API.
  *
- * Never stacks processes: if 4040 already lists a tunnel, or we already
- * spawned one, reuse it. A failed public-URL probe is not a reason to spawn.
+ * Provider priority (configurable via RELAY_TUNNEL=cloudflared|tailscale|ngrok|custom):
+ *   1. RELAY_PUBLIC_URL env var (or already-running cloudflared / ngrok inspector)
+ *   2. Cloudflare Quick Tunnel (`cloudflared tunnel --url ...`) — fast, free, no account needed
+ *   3. Tailscale Funnel (`tailscale funnel --bg <port>`) — fast if Tailscale is logged in
+ *   4. ngrok (`ngrok http <port>`) — legacy fallback
  */
 async function ensureTunnel(port) {
   if (ensureInFlight) return ensureInFlight;
@@ -252,11 +373,32 @@ async function ensureTunnel(port) {
 }
 
 async function ensureTunnelOnce(port) {
+  const pref = String(process.env.RELAY_TUNNEL || "").trim().toLowerCase();
+  if (process.env.RELAY_PUBLIC_URL) {
+    return String(process.env.RELAY_PUBLIC_URL).trim().replace(/\/$/, "");
+  }
+  if (cloudflaredAlive() && cloudflaredUrl && (!pref || pref === "cloudflared")) {
+    return cloudflaredUrl;
+  }
+
+  // Try Cloudflare Quick Tunnel first (unless user explicitly requested tailscale/ngrok).
+  if (!pref || pref === "cloudflared") {
+    const cfUrl = await spawnCloudflared(port);
+    if (cfUrl) return cfUrl;
+    if (pref === "cloudflared") return null;
+  }
+
+  // Try Tailscale Funnel next.
+  if (!pref || pref === "tailscale") {
+    const tsUrl = tryTailscaleFunnel(port);
+    if (tsUrl) return tsUrl;
+    if (pref === "tailscale") return null;
+  }
+
+  // Fallback: ngrok local inspector + spawn.
   let tunnels = await listedTunnels();
   let listed = pickHttps(tunnels);
   if (!listed) {
-    // 4040 blips under load; one retry avoids stacking a second ngrok on a
-    // tunnel we did not spawn (and therefore have no pid for).
     await new Promise((r) => setTimeout(r, 400));
     tunnels = await listedTunnels();
     listed = pickHttps(tunnels);
@@ -276,8 +418,6 @@ async function ensureTunnelOnce(port) {
       inspectorMisses = 0;
       return listed;
     }
-    // Inspector flap after sleep is normal. Do not kill the only tunnel
-    // because a public probe was slow — that is what kept ngrok dying.
     inspectorMisses += 1;
     if (inspectorMisses < 3) return null;
     inspectorMisses = 0;
@@ -321,7 +461,8 @@ function newHostRoom(url, extra, existing) {
 }
 
 async function share(port, extra = {}) {
-  const url = await ensureTunnel(port);
+  const explicitUrl = extra.url ? String(extra.url).trim().replace(/\/$/, "") : null;
+  const url = explicitUrl || (await ensureTunnel(port));
   if (!url) {
     return {
       ok: false,
@@ -344,6 +485,8 @@ module.exports = {
   publicUrl,
   share,
   ensureTunnel,
+  activeTunnelUrl,
+  killCloudflared,
   probeTunnel,
   roomPath,
   upsertMember,

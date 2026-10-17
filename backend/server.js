@@ -37,7 +37,7 @@ const { normalizeWorkspaceRoot, normalizeCompare } = require("./lib/transcripts/
 const { ingest: ingestSupergraph } = require("./lib/supergraph");
 const { cloneRepo, addLocal, detectRemoteUrl } = require("./lib/cloneRepo");
 const { installProjectHooks, installGlobalHooks } = require("./lib/installHooks");
-const { loadRoom, saveRoom, clearRoom, share: shareRoom, ensureTunnel, upsertMember, markLeft, dropMember, membersView } = require("./lib/room");
+const { loadRoom, saveRoom, clearRoom, share: shareRoom, ensureTunnel, activeTunnelUrl, killCloudflared, upsertMember, markLeft, dropMember, membersView } = require("./lib/room");
 const { localSnapshot, savePeerSnapshot, mergeRoomViews, clearPeers } = require("./lib/roomSync");
 const { compileRoomAsk } = require("./lib/roomAsk");
 const { recordCollision, mergeCollisionStats, loadLocalCollisions } = require("./lib/collisionMetrics");
@@ -107,10 +107,34 @@ async function main() {
   const app = express();
   app.use(
     cors({
-      origin: [UI_ORIGIN, "http://127.0.0.1:3002", "http://localhost:3000", "http://127.0.0.1:3000", /\.ngrok(-free)?\.app$/, /\.ngrok\.io$/],
+      origin: [
+        UI_ORIGIN,
+        "http://127.0.0.1:3002",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        /\.trycloudflare\.com$/,
+        /\.ts\.net$/,
+        /\.vercel\.app$/,
+        /\.up\.railway\.app$/,
+        /\.onrender\.com$/,
+        /\.fly\.dev$/,
+        /\.ngrok(-free)?\.app$/,
+        /\.ngrok\.io$/,
+      ],
       credentials: true,
     })
   );
+  // Hosted public demo guard (#14): when RELAY_PUBLIC_READONLY=1 is set, any
+  // non-loopback request may only read (GET/HEAD/OPTIONS, read-only /api/graph/query/*,
+  // or POST /mcp which already enforces READ_ONLY for remote callers).
+  if (process.env.RELAY_PUBLIC_READONLY === "1" || process.env.RELAY_PUBLIC_READONLY === "true") {
+    app.use((req, res, next) => {
+      if (!isRemoteRequest(req)) return next();
+      if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
+      if (req.path === "/mcp" || req.path.startsWith("/api/graph/query/")) return next();
+      return res.status(403).json({ ok: false, error: "public_readonly", reason: "Hosted demo instance is read-only for remote callers." });
+    });
+  }
   // A peer's chat history is far larger than any other request body. Mounting
   // its parser first means the 2mb default below sees an already-parsed body and
   // skips it, so one big route does not raise the ceiling for every other.
@@ -1469,6 +1493,7 @@ async function main() {
 
   let tunnelWatchTimer = null;
   let tunnelMaintainInFlight = null;
+  let lastTunnelProbeAt = 0;
 
   function stopTunnelWatch() {
     if (tunnelWatchTimer) clearInterval(tunnelWatchTimer);
@@ -1517,19 +1542,20 @@ async function main() {
       return;
     }
     const port = parsePort(process.argv);
-    let listedUrl = null;
-    try {
-      const res = await fetch("http://127.0.0.1:4040/api/tunnels");
-      if (res.ok) {
-        const tunnels = (await res.json()).tunnels || [];
-        listedUrl =
-          (tunnels.find((t) => String(t.public_url || "").startsWith("https://")) || tunnels[0] || {}).public_url || null;
+    let listedUrl = activeTunnelUrl();
+    if (!listedUrl) {
+      try {
+        const res = await fetch("http://127.0.0.1:4040/api/tunnels");
+        if (res.ok) {
+          const tunnels = (await res.json()).tunnels || [];
+          listedUrl =
+            (tunnels.find((t) => String(t.public_url || "").startsWith("https://")) || tunnels[0] || {}).public_url || null;
+        }
+      } catch {
+        listedUrl = null;
       }
-    } catch {
-      listedUrl = null;
     }
-    // Inspector already has a tunnel: reuse it. Do not call ensureTunnel (and
-    // never spawnNgrok) just because a public-URL probe would be slow or fail.
+    // Active tunnel (cloudflared / RELAY_PUBLIC_URL / inspector) already live: reuse it.
     let url = listedUrl;
     if (!listedUrl) {
       const now = Date.now();
@@ -2440,7 +2466,8 @@ async function main() {
         hint: "Leave this room first if you want to host your own.",
       });
     }
-    const result = await shareRoom(parsePort(process.argv), shareExtras(project));
+    const customUrl = req.body?.url ? String(req.body.url).trim().replace(/\/$/, "") : null;
+    const result = await shareRoom(parsePort(process.argv), { ...shareExtras(project), ...(customUrl ? { url: customUrl } : {}) });
     if (result.ok) {
       syncRoomLocks();
       result.warning = await publishAndWatch(result.room, project);
@@ -3091,6 +3118,7 @@ async function main() {
     const room = loadRoom();
     if (room?.role === "host") {
       stopTunnelWatch();
+      killCloudflared();
       try {
         await publishSignal(
           { ...room, live: false },
@@ -3426,6 +3454,7 @@ async function main() {
   if (existingRoom?.url) syncRoomLocks();
 
   const port = parsePort(process.argv);
+  const bindHost = process.env.RELAY_BIND_HOST || "127.0.0.1";
   const server = http.createServer(app);
   wss = new WebSocketServer({ server, path: "/ws/patches" });
   wssControl = new WebSocketServer({ server, path: "/ws/control" });
@@ -3718,9 +3747,9 @@ async function main() {
     }
     throw err;
   });
-  server.listen(port, "127.0.0.1", () => {
+  server.listen(port, bindHost, () => {
     writeState(process.cwd(), coordPort, { apiPort: port });
-    console.log(`[relay-api] http://127.0.0.1:${port}`);
+    console.log(`[relay-api] http://${bindHost}:${port}`);
     console.log(`[relay-coordinator] 127.0.0.1:${coordPort}`);
     console.log(`[relay-ui] ${UI_ORIGIN}`);
     const hosted = loadRoom();

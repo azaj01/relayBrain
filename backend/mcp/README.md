@@ -19,7 +19,7 @@ still works when the tunnel does not.
 
 ## Two transports, one tool surface
 
-Both are served by [`tools.js`](./tools.js). They expose the same fifteen tools.
+Both are served by [`tools.js`](./tools.js). They expose the same seventeen tools.
 
 ### stdio — what your agents already use
 
@@ -55,7 +55,7 @@ Stateless — no session id is issued, so there is nothing to expire. `GET /mcp`
 and `DELETE /mcp` answer `405`; a client that asks for the optional event stream
 just stops asking.
 
-**Anyone arriving from off-machine gets the seven read tools only.** Claiming a
+**Anyone arriving from off-machine gets the eleven read tools only.** Claiming a
 lock as the host would file it under the host's workspace, the host's user, and
 an agent id the host cannot verify — and would put a second writer on a lock
 table that has exactly one on purpose. `tools/list` hides the other six, so a
@@ -65,6 +65,8 @@ remote agent never sees a tool it cannot call.
 
 | Tool | Answers |
 |---|---|
+| `relay_session_brief` | memory-graph brief before editing files: who's on them now and why, blocks, decisions, prompts behind changes |
+| `relay_graph_query` | named Cypher queries over the FalkorDB memory graph (`file_story`, `who_to_ask`, `contention_trace`, `search_memory`, `hotspots`, …) |
 | `relay_get_chat_history` | what everyone told their agents to do, and what the agents said back |
 | `relay_room_brief` | teammate activity brief — **`/relay ask`** in Cursor, Claude, Codex, Copilot, Antigravity |
 | `relay_get_recent_changes` | which files changed, by whom, with diffs |

@@ -36,12 +36,14 @@ function bucketSessionKey(label, login, ts) {
   return `${String(label || "agent").trim()}::nosession::${loginKey(login)}::${day(ts)}`;
 }
 
-/** `label:host:session` — labels and hostnames never contain ':'; session ids might. */
+/** `label:host:session` (or `label:host:session@login` from a remote room member). */
 function parseLockAgentId(agentId) {
   const parts = String(agentId || "").split(":");
   const label = parts[0] || "";
   const host = parts[1] || "";
-  const session = parts.slice(2).join(":");
+  const rawSession = parts.slice(2).join(":");
+  const atIdx = rawSession.lastIndexOf("@");
+  const session = atIdx > 0 ? rawSession.slice(0, atIdx) : rawSession;
   return { label, host, session, sessionKnown: isRealSession(session) };
 }
 

@@ -62,12 +62,29 @@ async function bootstrap(client, projectId) {
     /* constraints are optional */
   }
 
-  const row = meta[0] || {};
+  const { runMigrations } = require("./migrations");
+  let migResult = { applied: [], ran: [] };
+  try {
+    migResult = await runMigrations(client, projectId, {
+      schemaVersion: SCHEMA_VERSION,
+      ingestVersion: INGEST_VERSION,
+    });
+  } catch {
+    /* keep existing meta row if migrations cannot run */
+  }
+
+  const refreshed = await client.read(
+    projectId,
+    "MATCH (m:Meta {key: 'meta'}) RETURN m.schemaVersion AS schemaVersion, m.ingestVersion AS ingestVersion, m.createdAt AS createdAt, m.lastIngestAt AS lastIngestAt"
+  );
+  const row = refreshed[0] || meta[0] || {};
   return {
     schemaVersion: row.schemaVersion,
     ingestVersion: row.ingestVersion,
     createdAt: row.createdAt,
     lastIngestAt: row.lastIngestAt || 0,
+    migrations: migResult.applied,
+    migrated: migResult.ran,
     needsRebuild: row.schemaVersion !== SCHEMA_VERSION || row.ingestVersion !== INGEST_VERSION,
   };
 }

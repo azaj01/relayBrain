@@ -50,11 +50,14 @@ function readConfig(env = process.env, file = env === process.env ? loadFileConf
   const url = envUrl || String(file?.url || "").trim();
   const disabled = flag(String(env.RELAY_FALKOR_DISABLED || "").toLowerCase()) || file?.disabled === true;
   const storeText = env.RELAY_FALKOR_TEXT != null ? env.RELAY_FALKOR_TEXT !== "0" : file?.storeText !== false;
+  const rawDays = env.RELAY_FALKOR_TEXT_DAYS != null ? Number(env.RELAY_FALKOR_TEXT_DAYS) : file?.textDays != null ? Number(file.textDays) : 90;
+  const textRetentionDays = Number.isFinite(rawDays) && rawDays >= 0 ? rawDays : 90;
   return {
     url,
     source: envUrl ? "env" : url ? "file" : null,
     enabled: Boolean(url) && !disabled,
     storeText,
+    textRetentionDays,
     prefix: env.RELAY_FALKOR_GRAPH_PREFIX || file?.prefix || "relay_",
     writeTimeoutMs: Number(env.RELAY_FALKOR_WRITE_TIMEOUT_MS) || 5000,
     readTimeoutMs: Number(env.RELAY_FALKOR_READ_TIMEOUT_MS) || 2000,

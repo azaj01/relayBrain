@@ -50,7 +50,7 @@ Git solved this for humans — but Git assumes people committing at human speed,
 
 Relay sits under every agent as a **coordination layer**. Pre-tool hooks claim a lock before an agent writes; post-tool hooks release it. If one agent is modifying a component, another **cannot silently overwrite** those changes.
 
-> **One host, no backend.** One person runs `relay serve` — that machine *is* the server. Everyone else connects over an ngrok tunnel, straight to that laptop. Nothing lives on infrastructure you do not own.
+> **One host, no backend.** One person runs `relay serve` — that machine *is* the server. Teammates connect over a fast tunnel (Cloudflare Quick Tunnel, Tailscale Funnel, custom host URL, or ngrok), straight to that laptop. Nothing lives on infrastructure you do not own.
 
 <div align="center">
 
@@ -96,7 +96,7 @@ relay graph enable    # save the URL; switches a running relay on
 relay serve           # Mission Control → Memory Graph tab
 ```
 
-Full setup (Windows/macOS/Linux, hosted FalkorDB, troubleshooting): [docs/MEMORY-GRAPH.md → Setup](./docs/MEMORY-GRAPH.md#setup).
+Full setup (Windows/macOS/Linux, hosted FalkorDB, troubleshooting): [docs/MEMORY-GRAPH.md → Setup](./docs/MEMORY-GRAPH.md#setup) · [Engineering Blog Post: From Flat JSON to a FalkorDB Memory Graph](./docs/BLOG-POST.md).
 
 ## Quick start
 
@@ -108,7 +108,7 @@ relay clone <repo-url>   # clone + register workspace + install agent hooks
 relay serve              # API → 127.0.0.1:3001 · Mission Control → :3002
 ```
 
-Then open Mission Control → **Team → Share** to mint the ngrok invite link.
+Then open Mission Control → **Team → Share** to start a tunnel (Cloudflare Quick Tunnel / Tailscale Funnel / custom URL) and mint the invite link.
 
 **Teammate:**
 
@@ -151,7 +151,7 @@ Requires **Node.js 18+** (20+ recommended). No hosted backend, no login server. 
 |-------|-------------|----------------|
 | **Claim / release** | pre- and post-tool hooks | exclusive write access to a file |
 | **Dependency graph** | tree-sitter import scan | files *affected by* the edit, not just the edit |
-| **Room** | `relay serve` + ngrok tunnel | one shared lock table across machines |
+| **Room** | `relay serve` + tunnel (Cloudflare / Tailscale / custom) | one shared lock table across machines |
 | **Patches** | `relay push` / `relay pull` | working-tree state without full copies |
 | **Board** | Mission Control (:3002) | who holds what, right now |
 
@@ -240,9 +240,9 @@ Languages parsed for the dependency graph: TypeScript/JavaScript, Python, Go, Ru
 | **Required** | Node.js 18+ (20+ recommended), npm |
 | **Bundled** | `express`, `cors`, `ws`, `@vscode/tree-sitter-wasm` · `next`, `react` (Mission Control) |
 | **Not needed** | MongoDB, Redis, Docker, a hosted backend, an account |
-| **Optional** | `gh` CLI for `relay login` · ngrok for cross-machine rooms |
+| **Optional** | `gh` CLI for `relay login` · `cloudflared` / Tailscale Funnel / ngrok for cross-machine rooms · Docker or FalkorDB Cloud for the memory graph |
 
-**Env vars:** `RELAY_PORT` (3001) · `RELAY_UI_PORT` (3002) · `RELAY_UI_ORIGIN`
+**Env vars:** `RELAY_PORT` (3001) · `RELAY_UI_PORT` (3002) · `RELAY_UI_ORIGIN` · `RELAY_TUNNEL` (`cloudflared`\|`tailscale`\|`ngrok`) · `RELAY_PUBLIC_URL` · `RELAY_PUBLIC_READONLY`
 
 ## Documentation
 
@@ -259,10 +259,12 @@ Full documentation lives in [`docs/`](./docs/README.md).
 | [Sync and patches](./docs/SYNC.md) | Patch format, Lamport ordering, transform, transcripts |
 | [CLI reference](./docs/CLI.md) | Every command, flag and exit code |
 | [HTTP API reference](./docs/HTTP-API.md) | Every endpoint, with auth rules |
-| [MCP reference](./docs/MCP.md) | The fifteen tools and the read-only room endpoint |
+| [MCP reference](./docs/MCP.md) | The seventeen tools and the read-only room endpoint |
 | [Hooks reference](./docs/HOOKS.md) | The hook contract per agent |
 | [Configuration](./docs/CONFIGURATION.md) | Environment variables, ports, on-disk layout |
 | [Troubleshooting](./docs/TROUBLESHOOTING.md) | `relay doctor` and the known failure modes |
+| [Memory graph](./docs/MEMORY-GRAPH.md) | FalkorDB graph model, queries, algorithms, migrations & retention |
+| [Blog post](./docs/BLOG-POST.md) | From flat JSON to a FalkorDB memory graph for AI coding agents |
 
 ## Roadmap
 

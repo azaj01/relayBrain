@@ -15,6 +15,13 @@ This project uses **Relay** for cross-agent memory. Do not ask the user to confi
 **Stop hooks:** Cursor, Claude Code, Codex, Copilot CLI, Antigravity — installed by `relay add` / `relay init`.
 **Relay MCP:** `relay_room_brief`, locks, chat history — installed into each agent's MCP config by `relay add`.
 
+## Shared memory graph (Relay MCP)
+
+- **Before editing files you have not touched in this session**, call `relay_session_brief` with their paths. It tells you who is editing them right now and why, past collisions, decisions, and the prompts behind recent changes from every agent and teammate. Respect what it says.
+- When you make an architectural or design decision, call `relay_report_decision` with `decision` and the `files` it affects.
+- When a claim is denied, the reason says what the holder is working on. Pick other work, or ask the user.
+- To explain why code looks the way it does, call `relay_graph_query` with `query: "file_story"` and the `path`.
+
 ## Relay pseudo-commands (user chat)
 
 These are **not** built-in slash commands. They are a **project convention** — phrases the user types so agents recognize Relay intent.
@@ -32,5 +39,15 @@ Use `npx relay` if the `relay` command is not on PATH. Do not ask the user to ed
 
 Cursor: `@relay-sync` skill at `.cursor/skills/relay-sync/`.
 <!-- END:relay-os -->
+
+
+
+
+
+
+
+
+
+
 
 

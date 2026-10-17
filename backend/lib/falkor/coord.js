@@ -134,13 +134,16 @@ function observeClaim(args, result) {
   }
   if (!result.holder) return;
   enrichDeny(result);
+  // bumpCollision() in server.js emits a second "collision" event after claim() returns,
+  // with the already-enriched reason string, so holderIntentText must fall back to holderIntent(holder).
+  const intentText = result.holderIntent?.text || holderIntent(result.holder)?.text || null;
   recordContention(projectId, {
     kind: "claim_blocked",
     file: args.file,
     wanter: args.agentId,
     holder: result.holder,
     reason: result.reason,
-    holderIntentText: result.holderIntent?.text || null,
+    holderIntentText: intentText,
   });
 }
 

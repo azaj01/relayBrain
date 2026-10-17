@@ -62,6 +62,16 @@ async function ingestHistory(projectId, history, workspacePath, opts = {}) {
 }
 
 function schedule(projectId, payload) {
+  try {
+    const projected = projectHistory(payload.history, {
+      workspacePath: payload.workspacePath,
+      isNew: () => false,
+      storeText: false,
+    });
+    for (const info of projected.intents.values()) intents.remember(info);
+  } catch {
+    /* best-effort immediate intent cache update */
+  }
   const entry = pending.get(projectId) || {};
   entry.payload = payload;
   clearTimeout(entry.timer);
@@ -165,6 +175,17 @@ async function ingestPeer(projectId, { snapshot, login, trustRowOwners }) {
 
 const peerTimers = new Map();
 function schedulePeer(projectId, payload) {
+  try {
+    const projected = projectPeer(payload.snapshot, {
+      login: payload.login,
+      trustRowOwners: payload.trustRowOwners,
+      isNew: () => false,
+      storeText: false,
+    });
+    for (const info of projected.intents.values()) intents.remember(info);
+  } catch {
+    /* best-effort immediate intent cache update */
+  }
   const key = `${projectId}|${payload.login}`;
   const entry = peerTimers.get(key) || {};
   entry.payload = payload;

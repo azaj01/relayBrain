@@ -19,7 +19,9 @@
     "falkor:up": "docker compose -f docker-compose.falkor.yml up -d",
     "falkor:down": "docker compose -f docker-compose.falkor.yml down",
     "falkor:spike": "node scripts/falkor-spike.js",
-    "falkor:rebuild": "node scripts/falkor-rebuild.js"
+    "falkor:rebuild": "node scripts/falkor-rebuild.js",
+    "falkor:seed-demo": "node scripts/falkor-seed-demo.js",
+    "test:e2e": "node scripts/e2e-full-test.js"
   },
   "dependencies": {
     "@vscode/tree-sitter-wasm": "^0.3.1",

@@ -23,7 +23,7 @@ function help() {
   relay status             Health check
   relay mcp-url            Print the MCP config for this room's shared context endpoint
   relay doctor             Why the Coordinator board is empty (run it on the machine that sees nothing)
-  relay graph <cmd>        Memory graph (FalkorDB): up | enable [url] | disable | status | rebuild [id|all]
+  relay graph <cmd>        Memory graph (FalkorDB): up | enable [url] | disable | status | stats | rebuild [id|all]
 `);
 }
 

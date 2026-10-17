@@ -67,8 +67,7 @@ relay serve
 
 ## Verifying your change
 
-There is no automated test suite yet, so verification is manual and specific to what you
-touched. Say in the PR what you actually did.
+Run the automated test suite (`npm test` runs 80+ unit and integration tests; set `RELAY_FALKOR_TEST_URL=falkor://localhost:6379` to include live FalkorDB graph tests), then verify manually for the area you touched. Say in the PR what you actually did.
 
 **Any change**
 

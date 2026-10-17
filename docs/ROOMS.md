@@ -28,17 +28,14 @@ relay login
 relay serve
 ```
 
-Then Mission Control → **Team** → **Share**.
+then Mission Control → **Team** → **Share** (or **Use custom tunnel URL**).
 
-Relay looks for an existing ngrok tunnel on the local inspector (`127.0.0.1:4040`) and
-reuses it; only if there is none does it spawn `ngrok http <port>`. It never stacks
-processes, and a failed probe of the public URL is not on its own a reason to spawn — the
-inspector flapping after a laptop sleep is normal, and killing the only tunnel over it was
-what kept ngrok dying.
+Relay supports multiple fast tunnel providers (configurable via `RELAY_TUNNEL=cloudflared|tailscale|ngrok` or `RELAY_PUBLIC_URL=<https://your-url>`):
 
-If ngrok is installed but has no authtoken you will get a hint pointing at
-[dashboard.ngrok.com](https://dashboard.ngrok.com/get-started/your-authtoken). You can
-also run `ngrok http 3001` yourself and adopt the URL via `POST /api/room/adopt`.
+1. **`RELAY_PUBLIC_URL` / custom URL** — if you are hosting on a cloud VM, Railway, Render, Fly.io, or your own reverse proxy, pass the URL directly.
+2. **Cloudflare Quick Tunnel (`cloudflared`)** — spawns `cloudflared tunnel --url http://127.0.0.1:3001 --no-autoupdate`. Fast global edge, zero signup, no browser interstitial warning.
+3. **Tailscale Funnel (`tailscale`)** — uses `tailscale funnel --bg 3001` if Tailscale is running.
+4. **ngrok (`ngrok`)** — legacy fallback; looks for an existing tunnel on `127.0.0.1:4040` and reuses it.
 
 Hosting is remembered. On the next `relay serve`, a host resumes its room automatically and
 re-establishes the tunnel.
@@ -200,6 +197,16 @@ Laptops close, tunnels expire, VPNs change. Relay degrades in defined steps:
    reconnects both sockets when it comes back.
 
 `relay doctor` walks exactly this chain. See [Troubleshooting](./TROUBLESHOOTING.md).
+
+---
+
+## Memory graph across a room
+
+The **host's** FalkorDB instance is the shared memory graph for the entire room:
+
+- **Guest snapshots → host graph:** whenever a guest pushes its transcript snapshot (`POST /api/room/history` or over `/ws/patches`), `roomSync.savePeerSnapshot` emits a `peer` event on the FalkorDB bus. The host re-attaches the guest's code edits to their conversation sessions and prompts (`projectPeer`), forcing `ownerLogin` to the guest's authenticated GitHub login so a peer cannot spoof another user's identity.
+- **Guest queries → host graph:** a guest does **not** need Docker or FalkorDB installed locally. When a guest's agent calls `relay_session_brief` or `relay_graph_query` (or the guest opens the **Memory Graph** tab in Mission Control), `routes.query()` forwards the read-only query to the host's `/mcp` endpoint (`source: "host"`). If the tunnel is down, the guest falls back to its own local graph if enabled, or returns `{ ok: false }` cleanly.
+- **Bidirectional lock-deny intent:** when a guest's claim is blocked by the host's agent (or vice versa, where the guest's lock carries `@<login>`), `coord.js` strips the `@<login>` suffix and resolves the holder's exact session intent from the in-process cache. *(Note: the host's intent cache knows a guest's session intent as of that guest's most recent transcript snapshot push.)*
 
 ---
 

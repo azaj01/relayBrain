@@ -201,7 +201,9 @@ Everything above works without these. Set them only to override the saved config
 | `RELAY_FALKOR_URL` | from `~/.relay/falkor.json` | `falkor://[user:pass@]host:port`; overrides the saved URL |
 | `RELAY_FALKOR_DISABLED` | `0` | `1` = off, whatever is saved |
 | `RELAY_FALKOR_TEXT` | `1` | `0` = metadata-only graph (no chat text or diffs) |
+| `RELAY_FALKOR_TEXT_DAYS` | `90` | Retention window in days: `Turn.text` and `Edit.diffHead` older than this are nulled while keeping all nodes and edges |
 | `RELAY_FALKOR_GRAPH_PREFIX` | `relay_` | graph name prefix (`<prefix><projectId>`) |
+| `RELAY_PUBLIC_READONLY` | `0` | `1` = hosted demo mode: non-loopback callers may only run read queries |
 
 Setting one for a single run:
 
@@ -239,6 +241,8 @@ coordinating; history is re-sent when FalkorDB comes back, and non-replayable ev
   wiped), so relay re-sends the history. `MERGE` makes the re-send idempotent.
 - The full rebuild is still available: `npm run falkor:rebuild -- <projectId|all>`. It only knows what `memory.json` still holds,
   so the re-send above is the normal path.
+- **In-place migrations and retention (#18).** Schema and ingest version updates run in-place migrations (`backend/lib/falkor/migrations.js`, recorded on `Meta.migrations`) at startup so history older than `memory.json`'s 2,000-event cap is never wiped on version bumps. Analytics also runs a retention pass (`RELAY_FALKOR_TEXT_DAYS`, default 90 days) that nulls `Turn.text` and `Edit.diffHead` on expired nodes while keeping every node, edge, and timestamp intact, and updates `CO_EDITED` incrementally (`Meta.lastAnalyticsAt`).
+- **Inspecting and backing up (`relay graph stats`).** Run `relay graph stats` to inspect node/edge counts by label, turn time spans, applied migrations, and memory footprint. To back up a running container, run `docker exec relay-falkordb redis-cli BGSAVE` and copy `/var/lib/falkordb/data/dump.rdb`.
 
 If FalkorDB ever crash-loops on start: `docker logs relay-falkordb`, copy the data out
 (`docker cp relay-falkordb:/var/lib/falkordb/data ./falkordb-backup`), then `docker compose -f docker-compose.falkor.yml down`

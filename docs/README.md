@@ -25,7 +25,7 @@ understand how it works, start at [Architecture](./ARCHITECTURE.md).
 |---|---|
 | [CLI reference](./CLI.md) | Every `relay` command, its flags, output and exit codes. |
 | [HTTP API reference](./HTTP-API.md) | Every endpoint on the API server and the coordinator, with auth rules. |
-| [MCP reference](./MCP.md) | The Relay MCP server, its fifteen tools, and the read-only room endpoint. |
+| [MCP reference](./MCP.md) | The Relay MCP server, its seventeen tools, and the read-only room endpoint. |
 | [Hooks reference](./HOOKS.md) | The hook contract per agent, payload handling, and the response dialects. |
 | [Configuration](./CONFIGURATION.md) | Environment variables, ports, config files and on-disk layout. |
 
@@ -37,6 +37,7 @@ understand how it works, start at [Architecture](./ARCHITECTURE.md).
 | [Locking](./LOCKING.md) | The lock table, TTLs, ownership, reads, and dependency-graph soft locks. |
 | [Sync and patches](./SYNC.md) | Patch format, Lamport ordering, operational transform, transcript harvesting. |
 | [Memory graph](./MEMORY-GRAPH.md) | FalkorDB project memory: the model, inferred prompts, context at conflict time, agent tools, setup. |
+| [Blog post](./BLOG-POST.md) | Engineering deep-dive: from flat JSON to a FalkorDB memory graph. |
 
 ## Operations
 

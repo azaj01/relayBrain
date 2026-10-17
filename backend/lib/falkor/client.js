@@ -46,11 +46,11 @@ class FalkorClient {
           url: this.cfg.url,
           disableOfflineQueue: true,
           socket: {
-            connectTimeout: 2000,
+            connectTimeout: 5000,
             reconnectStrategy: (retries) => Math.min(500 * (retries + 1), 5000),
           },
         }),
-        4000,
+        7000,
         "falkor connect"
       );
       // An EventEmitter "error" with no listener throws and would take relay serve down.
