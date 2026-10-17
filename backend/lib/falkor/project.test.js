@@ -129,7 +129,9 @@ test("projector: text storage off keeps cache intent but stores no text", () => 
   assert.equal(p.intents.get(CURSOR).intent, "make the navbar sticky");
 });
 
-test("projector: 2000 events in under 50ms", () => {
+// Guards against pathological (e.g. quadratic) projection, not raw speed: it runs on every
+// sync, and shared CI runners are slow and noisy. Typical: ~15 ms on a laptop.
+test("projector: 2000 events stay well under a sync's budget", () => {
   const big = [];
   for (let i = 0; i < 2000; i++) {
     big.push({
@@ -145,11 +147,12 @@ test("projector: 2000 events in under 50ms", () => {
       diff: "+a\n-b\n",
     });
   }
+  projectHistory(big, { workspacePath: WS }); // JIT warm-up
   const t = process.hrtime.bigint();
   const p = projectHistory(big, { workspacePath: WS });
   const ms = Number(process.hrtime.bigint() - t) / 1e6;
   assert.ok(p.edits.length > 600);
-  assert.ok(ms < 50, `took ${ms}ms`);
+  assert.ok(ms < 250, `took ${ms}ms`);
 });
 
 test("projector: filler prompts ('continue') defer to the request they continue", () => {
