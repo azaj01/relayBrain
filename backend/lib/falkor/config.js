@@ -45,9 +45,14 @@ function validUrl(url) {
  * Env wins over the saved file, so a one-off `RELAY_FALKOR_URL=…` still works.
  * Only the real process env reads the file; tests pass their own env object.
  */
+function ipv4Localhost(url) {
+  return String(url || "").replace(/\/\/localhost(?=[:/]|$)/i, "//127.0.0.1");
+}
+
 function readConfig(env = process.env, file = env === process.env ? loadFileConfig() : null) {
   const envUrl = String(env.RELAY_FALKOR_URL || "").trim();
-  const url = envUrl || String(file?.url || "").trim();
+  const rawUrl = envUrl || String(file?.url || "").trim();
+  const url = ipv4Localhost(rawUrl);
   const disabled = flag(String(env.RELAY_FALKOR_DISABLED || "").toLowerCase()) || file?.disabled === true;
   const storeText = env.RELAY_FALKOR_TEXT != null ? env.RELAY_FALKOR_TEXT !== "0" : file?.storeText !== false;
   const rawDays = env.RELAY_FALKOR_TEXT_DAYS != null ? Number(env.RELAY_FALKOR_TEXT_DAYS) : file?.textDays != null ? Number(file.textDays) : 90;

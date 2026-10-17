@@ -89,7 +89,7 @@ function startGraph() {
  * Enable button). Saves the URL so the next start remembers it.
  */
 async function enableAtRuntime(url) {
-  const target = String(url || "").trim() || "falkor://localhost:6379";
+  const target = String(url || "").trim() || "falkor://127.0.0.1:6379";
   if (!validUrl(target)) throw Object.assign(new Error("URL must look like falkor://host:port"), { status: 400 });
   const saved = { ...(loadFileConfig() || {}), url: target };
   delete saved.disabled;

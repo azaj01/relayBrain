@@ -6,7 +6,7 @@ const { readConfig, saveFileConfig, clearFileConfig, loadFileConfig, configPath,
 
 const root = path.join(__dirname, "..");
 const compose = path.join(root, "docker-compose.falkor.yml");
-const DEFAULT_URL = "falkor://localhost:6379";
+const DEFAULT_URL = "falkor://127.0.0.1:6379";
 
 function api() {
   return `http://127.0.0.1:${Number(process.env.RELAY_PORT || 3001)}`;
