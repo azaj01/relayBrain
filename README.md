@@ -14,7 +14,7 @@
 
 <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A520-3c873a?style=for-the-badge&logo=node.js&logoColor=white" alt="Node 20+"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2563eb?style=for-the-badge" alt="MIT"></a>
-<img src="https://img.shields.io/badge/storage-files%20only-64748b?style=for-the-badge" alt="No database">
+<img src="https://img.shields.io/badge/memory-FalkorDB%20graph-dc2626?style=for-the-badge" alt="FalkorDB memory graph">
 <img src="https://img.shields.io/badge/login-not%20required-16a34a?style=for-the-badge" alt="No login">
 
 <br/>
@@ -50,7 +50,7 @@ Git solved this for humans — but Git assumes people committing at human speed,
 
 Relay sits under every agent as a **coordination layer**. Pre-tool hooks claim a lock before an agent writes; post-tool hooks release it. If one agent is modifying a component, another **cannot silently overwrite** those changes.
 
-> **One host, no backend.** One person runs `relay serve` — that machine *is* the server. Everyone else connects over an ngrok tunnel, straight to that laptop. Nothing lives on infrastructure you do not own.
+> **One host, no backend.** One person runs `relay serve` — that machine *is* the server. Teammates connect over a fast tunnel (Cloudflare Quick Tunnel, Tailscale Funnel, custom host URL, or ngrok), straight to that laptop. Nothing lives on infrastructure you do not own.
 
 <div align="center">
 
@@ -68,6 +68,35 @@ Relay sits under every agent as a **coordination layer**. Pre-tool hooks claim a
 | **Dependency-graph locking** | Files do not exist independently — one change can affect dozens. Relay parses imports with tree-sitter and asks *"does this change affect files another agent is working on?"*, not just *"is this exact file locked?"* Agents stay parallel; the blast radius stays safe. |
 | **Patch sync across machines** | Your teammate has their own filesystem, environment, and agents. Relay propagates **patches**, not whole-project copies — `relay push` / `relay pull` keep every clone on the same working state. |
 | **Mission Control** | One board for every agent on every machine: live lock table, lock graph, code edits, unified agent chat history, conflicts, presence. |
+| **Memory graph (FalkorDB)** | Every agent, session, prompt, edit, block and decision across machines, as one graph. Agents get it *before* they act (`relay_session_brief`), and *at the moment of conflict*: a denied lock says what the holder is working on. |
+
+## Memory graph: built for Graph Hacks (FalkorDB)
+
+Locks stop two agents writing the same file at once. They don't tell the second agent **why** the file is taken, **what was decided** about it, or **which prompt** made it look the way it does. Before this, relay's memory was flat JSON, capped at 2,000 events, with nothing connected.
+
+Now every agent turn, edit, lock claim, block, decision and teammate's activity flows into a **FalkorDB graph per project**:
+
+```
+Person → Agent → Session → Turn
+                    └─ MADE → Edit ─ MODIFIED → File ← ON ─ Contention ─ HELD_BY → Session (its intent)
+                               └─ PROMPTED_BY → the user request behind the change
+File ─ CO_EDITED → File   (PageRank = hotspots, label propagation = work areas)
+```
+
+- **Explainable by default.** Every edit links to the user request that caused it, inferred from transcripts. "continue" and "yes" are skipped in favor of the real request, so no agent has to report anything.
+- **Context at the conflict.** *"File `src/auth.ts` is locked by Claude Code… They're working on: "switch the login flow to JWT tokens" (2 min ago)."*
+- **Context before acting.** `relay_session_brief(paths)` hands any agent (Claude Code, Cursor, Codex, Copilot, Antigravity) who is on those files now and why, past blocks, decisions, the prompts behind recent changes, and who to ask.
+- **Graph algorithms as agent tools.** PageRank and label propagation over co-edited files find coordination hotspots and work areas. `relay_graph_query` exposes 10 named Cypher queries. Every answer ships with its Cypher.
+- **Shared across the room.** The host's graph is the room's memory. Guests query it over the existing tunnel, even without FalkorDB installed.
+- **Safe to add.** Single writer, idempotent `MERGE`s, a circuit breaker, and a full fail-open path: with the graph off, relay behaves exactly as before.
+
+```bash
+relay graph up        # FalkorDB in Docker
+relay graph enable    # save the URL; switches a running relay on
+relay serve           # Mission Control → Memory Graph tab
+```
+
+Full setup (Windows/macOS/Linux, hosted FalkorDB, troubleshooting): [docs/MEMORY-GRAPH.md → Setup](./docs/MEMORY-GRAPH.md#setup) · [Engineering Blog Post: From Flat JSON to a FalkorDB Memory Graph](./docs/BLOG-POST.md).
 
 ## Quick start
 
@@ -79,7 +108,7 @@ relay clone <repo-url>   # clone + register workspace + install agent hooks
 relay serve              # API → 127.0.0.1:3001 · Mission Control → :3002
 ```
 
-Then open Mission Control → **Team → Share** to mint the ngrok invite link.
+Then open Mission Control → **Team → Share** to start a tunnel (Cloudflare Quick Tunnel / Tailscale Funnel / custom URL) and mint the invite link.
 
 **Teammate:**
 
@@ -102,7 +131,7 @@ Now start agents as usual. Hooks claim and release locks automatically — nobod
 | attach an existing repo | `relay add /path/to/repo` |
 | fresh clone | `relay clone <url> [dir]` |
 
-Requires **Node.js 18+** (20+ recommended). No database, no hosted backend, no login server.
+Requires **Node.js 18+** (20+ recommended). No hosted backend, no login server. The memory graph needs FalkorDB (`relay graph up`, Docker); without it, relay runs on files alone.
 
 </details>
 
@@ -122,7 +151,7 @@ Requires **Node.js 18+** (20+ recommended). No database, no hosted backend, no l
 |-------|-------------|----------------|
 | **Claim / release** | pre- and post-tool hooks | exclusive write access to a file |
 | **Dependency graph** | tree-sitter import scan | files *affected by* the edit, not just the edit |
-| **Room** | `relay serve` + ngrok tunnel | one shared lock table across machines |
+| **Room** | `relay serve` + tunnel (Cloudflare / Tailscale / custom) | one shared lock table across machines |
 | **Patches** | `relay push` / `relay pull` | working-tree state without full copies |
 | **Board** | Mission Control (:3002) | who holds what, right now |
 
@@ -180,6 +209,8 @@ Coordination tools (`relay_claim_file`, `relay_release_file`, `relay_status`) ru
 | `relay_get_chat_history` | Unified agent chat across every room member |
 | `relay_room_brief` | Teammate activity brief (for the `/relay ask` agent pseudo-command) |
 | `relay_get_collision_stats` | Lifetime counters for collisions Relay prevented |
+| `relay_session_brief` | Memory-graph brief for files you're about to touch: who's on them now and why, blocks, decisions, prompts behind changes |
+| `relay_graph_query` | Named Cypher queries over the FalkorDB memory graph (`file_story`, `who_to_ask`, `contention_trace`, `search_memory`, `hotspots`, …) |
 | `relay_report_change` | Push a code-change event |
 | `relay_report_decision` / `relay_get_decisions` | Append / read decisions |
 | `relay_update_task` / `relay_get_active_tasks` | Append / read tasks |
@@ -209,9 +240,9 @@ Languages parsed for the dependency graph: TypeScript/JavaScript, Python, Go, Ru
 | **Required** | Node.js 18+ (20+ recommended), npm |
 | **Bundled** | `express`, `cors`, `ws`, `@vscode/tree-sitter-wasm` · `next`, `react` (Mission Control) |
 | **Not needed** | MongoDB, Redis, Docker, a hosted backend, an account |
-| **Optional** | `gh` CLI for `relay login` · ngrok for cross-machine rooms |
+| **Optional** | `gh` CLI for `relay login` · `cloudflared` / Tailscale Funnel / ngrok for cross-machine rooms · Docker or FalkorDB Cloud for the memory graph |
 
-**Env vars:** `RELAY_PORT` (3001) · `RELAY_UI_PORT` (3002) · `RELAY_UI_ORIGIN`
+**Env vars:** `RELAY_PORT` (3001) · `RELAY_UI_PORT` (3002) · `RELAY_UI_ORIGIN` · `RELAY_TUNNEL` (`cloudflared`\|`tailscale`\|`ngrok`) · `RELAY_PUBLIC_URL` · `RELAY_PUBLIC_READONLY`
 
 ## Documentation
 
@@ -228,10 +259,12 @@ Full documentation lives in [`docs/`](./docs/README.md).
 | [Sync and patches](./docs/SYNC.md) | Patch format, Lamport ordering, transform, transcripts |
 | [CLI reference](./docs/CLI.md) | Every command, flag and exit code |
 | [HTTP API reference](./docs/HTTP-API.md) | Every endpoint, with auth rules |
-| [MCP reference](./docs/MCP.md) | The fifteen tools and the read-only room endpoint |
+| [MCP reference](./docs/MCP.md) | The seventeen tools and the read-only room endpoint |
 | [Hooks reference](./docs/HOOKS.md) | The hook contract per agent |
 | [Configuration](./docs/CONFIGURATION.md) | Environment variables, ports, on-disk layout |
 | [Troubleshooting](./docs/TROUBLESHOOTING.md) | `relay doctor` and the known failure modes |
+| [Memory graph](./docs/MEMORY-GRAPH.md) | FalkorDB graph model, queries, algorithms, migrations & retention |
+| [Blog post](./docs/BLOG-POST.md) | From flat JSON to a FalkorDB memory graph for AI coding agents |
 
 ## Roadmap
 

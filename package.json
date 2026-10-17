@@ -15,12 +15,20 @@
     "dev:ui": "npm run dev -w mission-control",
     "start": "node backend/server.js --port 3001",
     "coordinator": "node backend/coordinator/server.js",
-    "test": "node --test \"backend/**/*.test.js\""
+    "test": "node scripts/run-tests.js",
+    "falkor:up": "docker compose -f docker-compose.falkor.yml up -d",
+    "falkor:down": "docker compose -f docker-compose.falkor.yml down",
+    "falkor:spike": "node scripts/falkor-spike.js",
+    "falkor:rebuild": "node scripts/falkor-rebuild.js",
+    "falkor:seed-demo": "node scripts/falkor-seed-demo.js",
+    "test:e2e": "node scripts/e2e-full-test.js",
+    "test:e2e:room": "node scripts/e2e-room-test.js"
   },
   "dependencies": {
     "@vscode/tree-sitter-wasm": "^0.3.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "falkordb": "^6.8.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

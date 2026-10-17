@@ -262,4 +262,5 @@ export type TabId =
   | "locks"
   | "team"
   | "memory"
+  | "graph"
   | "settings";

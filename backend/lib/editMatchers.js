@@ -28,8 +28,10 @@ const EDIT = {
   cursor: "Write|Edit|Delete|StrReplace|ApplyPatch|EditNotebook|search_replace",
   // Codex hook config + session transcript tool names
   codex: "apply_patch|Edit|Write|write|edit_file|create_file|patch_file",
-  // docs.github.com/copilot/reference/hooks-reference — toolName edit|create
-  copilot: "edit|create|apply_patch",
+  // docs.github.com/copilot/reference/hooks-reference — CLI toolName edit|create, plus the
+  // VS Code Copilot agent's names. replace_string_in_file is its most common edit, and
+  // "edit|create" alone never matched it.
+  copilot: "edit|create|apply_patch|create_file|replace_string_in_file|multi_replace_string_in_file|insert_edit_into_file|edit_file",
   // Antigravity write tools (TargetFile on toolCall.args)
   antigravity: "write_to_file|replace_file_content|multi_replace_file_content|edit_file|create_file",
 };

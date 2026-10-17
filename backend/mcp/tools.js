@@ -40,8 +40,33 @@ const TOOLS = [
   { name: "relay_get_recent_changes", description: "Recent code_edit events from memory.json + Central", inputSchema: { type: "object", properties: {} } },
   { name: "relay_get_decisions", description: "Decision events from Central JSONL", inputSchema: { type: "object", properties: {} } },
   { name: "relay_get_active_tasks", description: "Task events from Central JSONL", inputSchema: { type: "object", properties: {} } },
-  { name: "relay_report_decision", description: "Append a decision event", inputSchema: { type: "object", properties: { decision_id: { type: "string" }, decision: { type: "string" }, status: { type: "string" } } } },
-  { name: "relay_update_task", description: "Append a task event", inputSchema: { type: "object", properties: { task_id: { type: "string" }, description: { type: "string" }, status: { type: "string" } } } },
+  {
+    name: "relay_report_decision",
+    description:
+      "Record an architectural/design decision in the shared project memory graph. Pass `files` (repo-relative paths the decision affects) so teammates' agents see it before touching those files.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        decision_id: { type: "string" },
+        decision: { type: "string" },
+        status: { type: "string" },
+        files: { type: "array", items: { type: "string" } },
+      },
+    },
+  },
+  {
+    name: "relay_update_task",
+    description: "Append a task event to the shared project memory graph. Pass `files` the task touches.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        task_id: { type: "string" },
+        description: { type: "string" },
+        status: { type: "string" },
+        files: { type: "array", items: { type: "string" } },
+      },
+    },
+  },
   { name: "relay_get_conflicts", description: "Overlapping edits in the last 5 minutes", inputSchema: { type: "object", properties: {} } },
   {
     name: "relay_room_brief",
@@ -54,7 +79,78 @@ const TOOLS = [
     description: "Lifetime counters for collisions Relay prevented (blocked claims, held-back patches, merge flags).",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "relay_session_brief",
+    description:
+      "CALL THIS BEFORE you start editing files you haven't touched in this session. Returns the shared project memory for those files from the FalkorDB knowledge graph: who is editing them right now and why, past blocks/collisions, decisions, the prompts behind recent changes (across every agent and teammate), who to ask, and related files in the same work area.",
+    inputSchema: {
+      type: "object",
+      properties: { paths: { type: "array", items: { type: "string" }, description: "repo-relative file paths you are about to work on" } },
+      required: ["paths"],
+    },
+  },
+  {
+    name: "relay_graph_query",
+    description:
+      "Ask the shared project memory graph (FalkorDB) a question. Queries: file_story (why a file looks the way it does: every change + the prompt behind it), who_to_ask (people who know a file), contention_trace (why an agent was blocked, what the holder was doing), search_memory (full-text over every agent conversation, needs q), agent_activity (what an agent/person has been doing, optional agent/person), hotspots (PageRank over co-edited files: where coordination matters), overlaps (two agents changed the same file within minutes), decision_trace, session_brief (needs paths), overview.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          enum: ["file_story", "who_to_ask", "contention_trace", "search_memory", "agent_activity", "hotspots", "overlaps", "decision_trace", "session_brief", "overview"],
+        },
+        path: { type: "string", description: "repo-relative file path" },
+        paths: { type: "array", items: { type: "string" } },
+        q: { type: "string", description: "search words for search_memory" },
+        agent: { type: "string", description: "agent label, e.g. Cursor" },
+        person: { type: "string", description: "GitHub login" },
+        limit: { type: "number" },
+      },
+      required: ["query"],
+    },
+  },
 ];
+
+const GRAPH_QUERIES = new Set(["file_story", "who_to_ask", "contention_trace", "search_memory", "agent_activity", "hotspots", "overlaps", "decision_trace", "session_brief", "overview"]);
+
+/**
+ * Inside relay serve the graph module answers directly (this is also the path a
+ * room guest reaches through POST /mcp). A per-agent stdio server is a separate
+ * process, so it asks the local relay over HTTP, which forwards to the host when
+ * this machine is a room guest.
+ */
+/** A few graph-derived lines for /relay ask; empty when the graph is off or slow. */
+async function graphBriefSection(ctx) {
+  try {
+    const [blocks, hot] = await Promise.race([
+      Promise.all([graphCall("contention_trace", { limit: 3 }, ctx), graphCall("hotspots", { limit: 3 }, ctx)]),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("slow")), 2500)),
+    ]);
+    const lines = [];
+    for (const b of blocks?.rows || []) {
+      lines.push(`- ${b.wanter || "an agent"} was blocked on \`${b.file}\` by ${b.holder || "another agent"}${b.holderWasDoing ? ` (working on: "${String(b.holderWasDoing).slice(0, 100)}")` : ""}`);
+    }
+    if (hot?.rows?.length) lines.push(`- Hotspots (PageRank over co-edits): ${hot.rows.map((h) => `\`${h.file}\``).join(", ")}`);
+    return lines.length ? `\n\n## Project memory graph\n${lines.join("\n")}\n` : "";
+  } catch {
+    return "";
+  }
+}
+
+async function graphCall(name, args, ctx) {
+  if (!GRAPH_QUERIES.has(name)) throw new Error(`unknown graph query "${name}"`);
+  const { path: p, paths, q, agent, person, limit } = args || {};
+  const clean = { path: p, paths, q, agent, person, limit };
+  const falkor = require("../lib/falkor");
+  if (falkor.state.cfg) {
+    return require("../lib/falkor/routes").query(name, { ...clean, projectId: ctx.projectId, workspace: ctx.workspace });
+  }
+  const port = client.apiPort(ctx.workspace);
+  const { status, body } = await client.postJson(port, `/api/graph/query/${name}`, { ...clean, workspace: ctx.workspace, projectId: ctx.projectId }, 6000);
+  if (status >= 400 && !body?.ok) throw new Error(body?.reason || `graph query failed (${status})`);
+  return body;
+}
 
 /**
  * What a caller reached through the tunnel is allowed to do.
@@ -75,6 +171,8 @@ const READ_ONLY = new Set([
   "relay_get_conflicts",
   "relay_room_brief",
   "relay_get_collision_stats",
+  "relay_session_brief",
+  "relay_graph_query",
 ]);
 
 function toolsFor(ctx) {
@@ -97,6 +195,7 @@ function defaultCtx(overrides = {}) {
     workspace,
     projectId: resolveProjectId(workspace),
     agentId: process.env.RELAY_AGENT_ID || "mcp:local:stdio",
+    agentLabel: process.env.RELAY_AGENT_LABEL || null,
     user: process.env.RELAY_USER || "local",
     owner: process.env.RELAY_OWNER || "local",
     centralProjectId: process.env.RELAY_CENTRAL_PROJECT_ID || null,
@@ -104,6 +203,12 @@ function defaultCtx(overrides = {}) {
     viewer: null,
     ...overrides,
   };
+}
+
+function cleanFiles(files) {
+  if (!Array.isArray(files)) return undefined;
+  const out = files.filter((f) => typeof f === "string" && f.trim()).map((f) => f.trim().slice(0, 300));
+  return out.length ? out.slice(0, 50) : undefined;
 }
 
 function clampLimit(value) {
@@ -293,13 +398,17 @@ async function callTool(name, args = {}, context = {}) {
         locks: locksFromStatus(st),
         limit,
       });
-      return { markdown: brief.markdown, data: brief.json, room: view.room };
+      return { markdown: brief.markdown + (await graphBriefSection(ctx)), data: brief.json, room: view.room };
     }
     case "relay_get_collision_stats": {
       const login = ctx.owner || ctx.user || "local";
       const merged = mergeCollisionStats(memory, { localLogin: login, projectId: pid });
       return { collisions: merged, local: getCollisionStats(pid), room: (await roomView(ctx, memory)).room };
     }
+    case "relay_session_brief":
+      return graphCall("session_brief", args, ctx);
+    case "relay_graph_query":
+      return graphCall(args.query, args, ctx);
     case "relay_report_change":
       return appendEvent(centralId, {
         kind: "change",
@@ -326,6 +435,8 @@ async function callTool(name, args = {}, context = {}) {
         decision_id: args.decision_id,
         status: args.status || "open",
         agent_source: ctx.agentId,
+        agent_label: ctx.agentLabel,
+        files: cleanFiles(args.files),
       });
     case "relay_update_task":
       return appendEvent(centralId, {
@@ -336,6 +447,8 @@ async function callTool(name, args = {}, context = {}) {
         task_id: args.task_id,
         status: args.status || "open",
         agent_source: ctx.agentId,
+        agent_label: ctx.agentLabel,
+        files: cleanFiles(args.files),
       });
     default:
       throw new Error(`Unknown tool ${name}`);

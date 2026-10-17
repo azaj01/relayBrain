@@ -80,6 +80,7 @@ function savePeerSnapshot(projectId, key, snapshot, login) {
   peers[key] = clean;
   memory.roomPeers = peers;
   saveMemory(projectId, memory);
+  require("./falkor/bus").emit("peer", { projectId, key, login: clean.login, snapshot: clean });
   return clean;
 }
 

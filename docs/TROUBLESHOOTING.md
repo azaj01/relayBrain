@@ -245,6 +245,44 @@ graph. `POST /api/projects/:id/sync` republishes it.
 
 ---
 
+## The memory graph is off, empty, or stale
+
+Start with:
+
+```bash
+relay graph status
+```
+
+**"config: none" / Memory Graph tab says "not enabled".** Nothing is saved yet:
+`relay graph up` (needs Docker), then `relay graph enable`, or click **Enable** in the tab.
+
+**"FalkorDB unreachable (retrying)".** The database isn't running or the URL is wrong.
+`docker ps` should list `relay-falkordb`; if not, `relay graph up`. On Windows, *failed to
+connect to the docker API at npipe:…* means Docker Desktop isn't started. Relay keeps
+coordinating meanwhile and reconnects by itself within about 30 seconds.
+
+**Port 6379 is taken** (often a local Redis). Map another host port in
+`docker-compose.falkor.yml` (`"6380:6379"`) and `relay graph enable falkor://localhost:6380`.
+
+**Connected but empty.** The graph fills when an agent turn ends (the Stop hook calls
+`/api/ingest-stop`) or on `relay_sync`. History from before the graph was enabled needs
+`relay graph rebuild`. If new turns never arrive, it's the hooks, not the graph: see
+[Agents are not being blocked at all](#agents-are-not-being-blocked-at-all) and `relay doctor`.
+
+**"NEEDS REBUILD".** An update changed how history is keyed. `relay graph rebuild`.
+
+**A denied agent isn't told what the holder is doing.** The holder's session has no user
+prompt in the graph yet (its transcript wasn't synced), or the agent's hooks are out of
+date. Run `relay init` in the repo and restart the agents.
+
+**Decisions show "unknown agent".** The agent's MCP config predates `RELAY_AGENT_LABEL`:
+`relay init` again and restart the agent.
+
+**The FalkorDB container restarts in a loop after a crash.** See
+[Memory graph → Persistence and recovery](./MEMORY-GRAPH.md#persistence-and-recovery).
+
+---
+
 ## Locks pointing at a drive that no longer exists
 
 If a workspace's `.relay` directory cannot be created — a missing drive letter, an
@@ -262,6 +300,7 @@ Collect this before filing an issue:
 ```bash
 relay status
 relay doctor
+relay graph status
 node --version
 ```
 

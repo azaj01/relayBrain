@@ -25,6 +25,7 @@ function unifyEvent(raw, agent, ownerLogin) {
     path: raw.path || null,
     diff: raw.diff || "",
     transcriptPath: raw.transcriptPath || null,
+    tsSynthetic: raw.tsSynthetic === true,
   };
 }
 
@@ -244,6 +245,7 @@ function syncTranscripts(project, opts = {}) {
   memory.lastTranscriptSyncAt = Date.now();
   if (memory.ir) delete memory.ir;
   saveMemory(project.id, memory);
+  require("../falkor/bus").emit("history", { project, workspacePath, memory });
   return memory;
 }
 
@@ -284,5 +286,6 @@ module.exports = {
   latestTranscriptMtime,
   unifyEvent,
   compareEvents,
+  relativeEditPath,
   id,
 };

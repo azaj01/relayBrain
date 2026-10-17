@@ -30,6 +30,8 @@ export function TeamPanel() {
   const [inviteLogin, setInviteLogin] = useState("");
   const [issued, setIssued] = useState<{ login: string; link: string; warning?: string } | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [hostUrlOpen, setHostUrlOpen] = useState(false);
+  const [customHostUrl, setCustomHostUrl] = useState("");
 
   useEffect(() => {
     setRoom(dashboard?.room || null);
@@ -122,14 +124,20 @@ export function TeamPanel() {
     }
   }
 
-  async function share() {
+  async function share(customUrl?: string) {
     setBusy(true);
     setHint("");
     try {
-      const res = await fetch(apiUrl("/api/room/share"), { method: "POST" });
+      const res = await fetch(apiUrl("/api/room/share"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(customUrl ? { url: customUrl } : {}),
+      });
       const body = await res.json();
       if (body.ok) {
         setRoom(body.room);
+        setCustomHostUrl("");
+        setHostUrlOpen(false);
         if (body.warning) setHint(body.warning);
       } else setHint(body.hint || body.error || "Could not start sharing");
     } finally {
@@ -376,12 +384,31 @@ export function TeamPanel() {
                 ))}
               </div>
             ) : null}
-            <button className={ui.syncBtn} onClick={share} disabled={busy}>
+            <button className={ui.syncBtn} onClick={() => share()} disabled={busy}>
               {busy ? "Starting…" : "Share this workspace"}
+            </button>
+            <button className={`${ui.chip} ${ui.ghost}`} onClick={() => setHostUrlOpen((v) => !v)} style={{ marginLeft: 8 }}>
+              {hostUrlOpen ? "Hide custom URL" : "Use custom tunnel URL"}
             </button>
             <button className={`${ui.chip} ${ui.ghost}`} onClick={() => setLinkOpen((v) => !v)} style={{ marginLeft: 8 }}>
               {linkOpen ? "Hide invite link" : "Have an invite link?"}
             </button>
+            {hostUrlOpen ? (
+              <div style={{ marginTop: 10 }}>
+                <label>Public tunnel or server URL (Cloudflare Quick Tunnel, Tailscale Funnel, Railway, LAN)</label>
+                <input
+                  className={ui.field}
+                  value={customHostUrl}
+                  onChange={(e) => setCustomHostUrl(e.target.value)}
+                  placeholder="https://xyz.trycloudflare.com"
+                />
+                <div className={ui.actions} style={{ justifyContent: "flex-start" }}>
+                  <button className={ui.syncBtn} onClick={() => share(customHostUrl)} disabled={busy || !customHostUrl.trim()}>
+                    Host at URL
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {linkOpen ? (
               <>
                 <label>Paste the invite link</label>
@@ -389,7 +416,7 @@ export function TeamPanel() {
                   className={ui.field}
                   value={joinUrl}
                   onChange={(e) => setJoinUrl(e.target.value)}
-                  placeholder="https://abc.ngrok-free.app/?relay_invite=…"
+                  placeholder="https://xyz.trycloudflare.com/?relay_invite=…"
                 />
                 <label>Folder to mirror into (optional)</label>
                 <input

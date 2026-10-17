@@ -106,6 +106,7 @@ function applyPeerFile(projectId, patch, workspacePath) {
   let disk = { applied: false };
   if (workspacePath) disk = applyPatchToDisk(workspacePath, patch);
   saveMemory(projectId, memory);
+  require("./falkor/bus").emit("patch", { projectId, patch, mine: false });
   return { ...disk, recorded: true };
 }
 
@@ -125,6 +126,7 @@ function recordPatch(projectId, patch) {
     binary: patch.binary,
   });
   saveMemory(projectId, memory);
+  require("./falkor/bus").emit("patch", { projectId, patch, mine: true });
   return memory;
 }
 

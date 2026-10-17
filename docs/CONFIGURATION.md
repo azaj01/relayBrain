@@ -56,6 +56,21 @@ variables, a small optional override file, and the state files it maintains.
 |---|---|
 | `RELAY_CENTRAL_ADMIN_KEY` | Admin credential for the `/api/central/*` routes. |
 
+### Memory graph (FalkorDB)
+
+Normally configured with `relay graph enable`, which saves `~/.relay/falkor.json`. These
+override the saved file for one run. See [Memory graph](./MEMORY-GRAPH.md#setup).
+
+| Variable | Default | Effect |
+|---|---|---|
+| `RELAY_FALKOR_URL` | saved URL | `falkor://[user:pass@]host:port`. Wins over the saved file. |
+| `RELAY_FALKOR_DISABLED` | `0` | `1` turns the graph off whatever is saved. |
+| `RELAY_FALKOR_TEXT` | `1` | `0` stores no chat text or diffs: metadata-only graph. |
+| `RELAY_FALKOR_GRAPH_PREFIX` | `relay_` | Graph name prefix: one graph per project, `<prefix><projectId>`. |
+| `RELAY_FALKOR_WRITE_TIMEOUT_MS` / `RELAY_FALKOR_READ_TIMEOUT_MS` | `5000` / `2000` | Per-query timeouts. |
+| `RELAY_AGENT_LABEL` | set by `relay init` | Written into each agent's MCP entry so decisions and tasks are attributed to that agent. |
+| `RELAY_SKIP_GLOBAL_HOOKS` | unset | `1` stops `relay serve` from rewriting `~/.claude` / `~/.cursor` hooks. For running a test relay next to your real one. |
+
 ### Read by the environment, not set by Relay
 
 `CLAUDE_CODE_CHILD_SESSION`, `COPILOT_AGENT_PROMPT` and `GITHUB_COPILOT_API_TOKEN` are
@@ -101,7 +116,10 @@ into a refusal; soft blocks are always advisory.
 │       │                                patches, patchBuffer,
 │       │                                lastAppliedLamport, agents,
 │       │                                roomPeers, stats
-│       └── collisions.json              authoritative counters
+│       ├── collisions.json              authoritative counters
+│       ├── graph-cursor.json            memory graph: events already sent
+│       └── graph-central-cursor.json    memory graph: decisions/tasks already sent
+├── falkor.json                          memory graph URL (relay graph enable), user-only
 ├── room.json                            machine-wide room membership
 ├── coordinator-state.json               { port, apiPort, pid, startedAt }
 ├── locks/                               fallback lock files
@@ -138,6 +156,8 @@ falls back to `~/.relay` rather than failing the operation.
 | 3002 | Mission Control | localhost |
 | ephemeral | Coordinator | `127.0.0.1` only |
 | 4040 | ngrok's own inspector | localhost, read by Relay |
+| 6379 | FalkorDB (`relay graph up`) | Docker port mapping |
+| 3010 | FalkorDB browser UI | Docker port mapping |
 
 The API server binds `127.0.0.1` explicitly. It is reachable from outside **only** through
 the ngrok tunnel you start yourself, and only while you are hosting a room.

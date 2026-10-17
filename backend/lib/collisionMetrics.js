@@ -204,6 +204,7 @@ function recordCollision(projectId, kind, detail = {}) {
   c.updatedAt = Date.now();
   c.recent = [{ kind, ts: c.updatedAt, ...detail }, ...(c.recent || [])].slice(0, RECENT_MAX);
   persistLocalCollisions(projectId, c);
+  require("./falkor/bus").emit("collision", { projectId, kind, detail, ts: c.updatedAt });
   return normalizeStats(c);
 }
 

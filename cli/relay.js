@@ -23,6 +23,7 @@ function help() {
   relay status             Health check
   relay mcp-url            Print the MCP config for this room's shared context endpoint
   relay doctor             Why the Coordinator board is empty (run it on the machine that sees nothing)
+  relay graph <cmd>        Memory graph (FalkorDB): up | enable [url] | disable | status | stats | rebuild [id|all]
 `);
 }
 
@@ -153,6 +154,15 @@ async function doctor() {
     return;
   }
 
+  try {
+    const g = await fetch(`${api}/api/graph/health`).then((r) => r.json());
+    if (!g.running) info("memory graph off — `relay graph up && relay graph enable` to turn it on");
+    else if (g.breaker?.state === "closed") ok(`memory graph connected (${g.url})`);
+    else bad(`memory graph cannot reach FalkorDB at ${g.url}${g.breaker?.lastError ? ` (${g.breaker.lastError})` : ""} — \`relay graph status\``);
+  } catch {
+    info("memory graph status unavailable (older relay serve?)");
+  }
+
   const room = health.room;
   if (!room?.url) {
     info("no room joined on this machine — the board shows only local agents.");
@@ -236,6 +246,10 @@ async function main() {
   }
   if (cmd === "doctor") {
     await doctor();
+    return;
+  }
+  if (cmd === "graph") {
+    await require("./graph").graph(rest);
     return;
   }
   if (cmd === "serve") {

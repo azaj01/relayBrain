@@ -361,4 +361,4 @@ async function heartbeat(workspacePath, agentId, file) {
   return { ok: false };
 }
 
-module.exports = { claimFile, releaseFile, releaseAll, status, readPort, heartbeat };
+module.exports = { claimFile, releaseFile, releaseAll, status, readPort, heartbeat, apiPort, postJson };

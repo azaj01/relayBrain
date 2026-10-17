@@ -157,7 +157,26 @@ function extractFilePaths(payload) {
   const named = [one, ...extra].filter((v) => typeof v === "string" && v.trim());
   // Always scan: multi_replace_file_content can name several TargetFiles, and a
   // single top-level hit used to hide the rest.
-  return [...new Set([...named, ...scanForPaths(p)])];
+  return [...new Set([...named, ...scanForPaths(p), ...patchTargets(p)])];
+}
+
+// apply_patch (Codex, Copilot) names its files only inside the patch text, under
+// tool_input.command / toolArgs.input. Without this an apply_patch edit claims nothing.
+const PATCH_HEADER = /^\*\*\* (?:Add|Update|Delete) File: (.+?)\s*$/gm;
+function patchTargets(p) {
+  const out = [];
+  const texts = [p.tool_input, p.toolArgs, p.toolInput, p.tool_args]
+    .filter((v) => v && typeof v === "object")
+    .flatMap((v) => [v.input, v.command, v.patch])
+    .concat(typeof p.tool_input === "string" ? [p.tool_input] : []);
+  for (const text of texts) {
+    const s = Array.isArray(text) ? text.join("\n") : text;
+    if (typeof s !== "string" || !s.includes("*** ")) continue;
+    PATCH_HEADER.lastIndex = 0;
+    let m;
+    while ((m = PATCH_HEADER.exec(s))) out.push(m[1]);
+  }
+  return out;
 }
 
 // An agent can edit a path outside the workspace it was started in (a temp file,
@@ -265,7 +284,15 @@ function currentLogin() {
 }
 
 function lockAgentIdFor(mode, payload) {
+  // Derive the session from the transcript the payload points at, exactly as the
+  // transcript parser does, so a lock and its transcript always name one session.
+  // Cursor's conversation_id and Codex's rollout filename are not documented to match.
+  const transcript = payload.transcript_path || payload.transcriptPath;
+  const fromTranscript = transcript
+    ? require("../backend/lib/transcripts/sessionId").sessionIdFromTranscript(modeLabel(mode), transcript)
+    : null;
   const session =
+    fromTranscript ||
     payload.session_id ||
     payload.conversation_id ||
     // Antigravity and Copilot both name this in camelCase. Missing them meant

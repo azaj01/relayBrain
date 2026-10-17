@@ -7,12 +7,13 @@
 | | |
 |---|---|
 | **Required** | Node.js 20+ (`package.json` declares `engines.node >= 20`), npm |
-| **Bundled** | `express`, `cors`, `ws`, `@vscode/tree-sitter-wasm`; `next` and `react` for Mission Control |
-| **Not needed** | MongoDB, Redis, Docker, a hosted backend, an account |
-| **Optional** | [`gh` CLI](https://cli.github.com) for `relay login`; [ngrok](https://ngrok.com) for cross-machine rooms |
+| **Bundled** | `express`, `cors`, `ws`, `@vscode/tree-sitter-wasm`, `falkordb` (client); `next` and `react` for Mission Control |
+| **Not needed** | MongoDB, Redis, a hosted backend, an account |
+| **Optional** | [`gh` CLI](https://cli.github.com) for `relay login`; [ngrok](https://ngrok.com) for cross-machine rooms; [Docker](https://www.docker.com/products/docker-desktop/) (or a hosted FalkorDB) for the [memory graph](./MEMORY-GRAPH.md) |
 
-Relay stores everything in JSON files under `~/.relay` and `<repo>/.relay`. There is no
-database and no migration step.
+Coordination needs no database: Relay keeps locks, history and room state in JSON files
+under `~/.relay` and `<repo>/.relay`. The optional memory graph adds a FalkorDB database
+(`relay graph up`); without it, everything else works exactly the same.
 
 ---
 

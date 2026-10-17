@@ -189,6 +189,7 @@ works but I see nothing" is a normal — and otherwise invisible — way for Rel
 Checks, in order:
 
 1. Local API answers on `127.0.0.1:<RELAY_PORT>`. If not, it stops here and exits 1.
+   Then one line for the memory graph: off, connected, or unable to reach FalkorDB.
 2. A room is joined, and with what role and URL.
 3. **Guest only:** `room.json` carries a `hostProjectId`. Without it the lock mirror never
    starts, so the board stays empty even while locks work.
@@ -204,6 +205,41 @@ room and locks claimed on this machine.
 Run it **on the machine that sees nothing**.
 
 See [Troubleshooting](./TROUBLESHOOTING.md) for what to do with each result.
+
+---
+
+## Memory graph
+
+The optional FalkorDB memory graph ([Memory graph](./MEMORY-GRAPH.md)). No environment
+variables needed: the URL is saved in `~/.relay/falkor.json`.
+
+### `relay graph up`
+
+Starts FalkorDB from `docker-compose.falkor.yml`: the database on `localhost:6379`, its
+browser UI on `localhost:3010`, data in a named Docker volume. Exits 1 with instructions
+if Docker isn't running.
+
+### `relay graph enable [url]`
+
+Checks the database answers, saves the URL (default `falkor://localhost:6379`), and, if
+`relay serve` is running, switches it on immediately (`POST /api/graph/enable`). Saves even
+when the database is unreachable, so you can enable before starting it. Warns when a
+`RELAY_FALKOR_URL` in your shell overrides the saved URL.
+
+### `relay graph disable`
+
+Removes the saved config. Takes effect on the next `relay serve`.
+
+### `relay graph status`
+
+Where the config comes from (`env` / `file`), whether the running relay is connected, the
+last ingest per project (and `NEEDS REBUILD` when applicable), and whether the database is
+reachable with its graph names. Exits 1 if the database is unreachable.
+
+### `relay graph rebuild [projectId|all]`
+
+Drops and rebuilds a project's graph from the history relay already has (`memory.json`,
+room peers), then runs the analytics (overlaps, PageRank, work areas). Default: `all`.
 
 ---
 

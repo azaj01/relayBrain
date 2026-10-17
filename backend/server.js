@@ -37,7 +37,7 @@ const { normalizeWorkspaceRoot, normalizeCompare } = require("./lib/transcripts/
 const { ingest: ingestSupergraph } = require("./lib/supergraph");
 const { cloneRepo, addLocal, detectRemoteUrl } = require("./lib/cloneRepo");
 const { installProjectHooks, installGlobalHooks } = require("./lib/installHooks");
-const { loadRoom, saveRoom, clearRoom, share: shareRoom, ensureTunnel, upsertMember, markLeft, dropMember, membersView } = require("./lib/room");
+const { loadRoom, saveRoom, clearRoom, share: shareRoom, ensureTunnel, activeTunnelUrl, killCloudflared, upsertMember, markLeft, dropMember, membersView } = require("./lib/room");
 const { localSnapshot, savePeerSnapshot, mergeRoomViews, clearPeers } = require("./lib/roomSync");
 const { compileRoomAsk } = require("./lib/roomAsk");
 const { recordCollision, mergeCollisionStats, loadLocalCollisions } = require("./lib/collisionMetrics");
@@ -107,10 +107,34 @@ async function main() {
   const app = express();
   app.use(
     cors({
-      origin: [UI_ORIGIN, "http://127.0.0.1:3002", "http://localhost:3000", "http://127.0.0.1:3000", /\.ngrok(-free)?\.app$/, /\.ngrok\.io$/],
+      origin: [
+        UI_ORIGIN,
+        "http://127.0.0.1:3002",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        /\.trycloudflare\.com$/,
+        /\.ts\.net$/,
+        /\.vercel\.app$/,
+        /\.up\.railway\.app$/,
+        /\.onrender\.com$/,
+        /\.fly\.dev$/,
+        /\.ngrok(-free)?\.app$/,
+        /\.ngrok\.io$/,
+      ],
       credentials: true,
     })
   );
+  // Hosted public demo guard (#14): when RELAY_PUBLIC_READONLY=1 is set, any
+  // non-loopback request may only read (GET/HEAD/OPTIONS, read-only /api/graph/query/*,
+  // or POST /mcp which already enforces READ_ONLY for remote callers).
+  if (process.env.RELAY_PUBLIC_READONLY === "1" || process.env.RELAY_PUBLIC_READONLY === "true") {
+    app.use((req, res, next) => {
+      if (!isRemoteRequest(req)) return next();
+      if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
+      if (req.path === "/mcp" || req.path.startsWith("/api/graph/query/")) return next();
+      return res.status(403).json({ ok: false, error: "public_readonly", reason: "Hosted demo instance is read-only for remote callers." });
+    });
+  }
   // A peer's chat history is far larger than any other request body. Mounting
   // its parser first means the 2mb default below sees an already-parsed body and
   // skips it, so one big route does not raise the ceiling for every other.
@@ -154,7 +178,7 @@ async function main() {
 
   const sse = new SseHub();
   try {
-    installGlobalHooks();
+    if (process.env.RELAY_SKIP_GLOBAL_HOOKS !== "1") installGlobalHooks();
   } catch {
     /* global configs are best-effort */
   }
@@ -165,6 +189,14 @@ async function main() {
   });
   const coordPort = await listen(coordServer, Number(process.env.RELAY_COORDINATOR_PORT || 0));
   coordApp.set("port", coordPort);
+  require("./lib/falkor").init(app, {
+    lockTable,
+    sse,
+    projectForPath: (p) => projectForPath(p),
+    currentUser: () => currentUser(),
+    requireRoomMember: (req, res, next) => requireRoomMember(req, res, next),
+    fetchHost: (url, pathname, init) => fetchHost(url, pathname, init),
+  });
   // NOTE: coordinator state is published only once the API port is bound (see
   // server.listen below). Writing it here means a second `relay serve` that
   // dies on EADDRINUSE still overwrites the live instance's pointer with a port
@@ -287,8 +319,19 @@ async function main() {
   // reconnects to the URL already on disk.
   let refreshGuestRoom = async (room) => room;
 
+  /** An existing socket already open, or still connecting, to this exact URL. */
+  function socketLive(sock, wsUrl) {
+    return Boolean(
+      sock && sock.relayUrl === wsUrl && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)
+    );
+  }
+
   function connectHostPatches(room) {
     if (!room?.url || room.role !== "guest") return;
+    const wsUrl = `${room.url.replace(/^http/, "ws").replace(/\/$/, "")}/ws/patches${
+      room.memberToken ? `?token=${encodeURIComponent(room.memberToken)}` : ""
+    }`;
+    if (socketLive(hostSocket, wsUrl)) return;
     if (hostRetryTimer) {
       clearTimeout(hostRetryTimer);
       hostRetryTimer = null;
@@ -300,16 +343,16 @@ async function main() {
         /* ignore */
       }
     }
-    const wsUrl = `${room.url.replace(/^http/, "ws").replace(/\/$/, "")}/ws/patches${
-      room.memberToken ? `?token=${encodeURIComponent(room.memberToken)}` : ""
-    }`;
+    let socket;
     try {
-      hostSocket = new WebSocket(wsUrl, {
+      socket = new WebSocket(wsUrl, {
         headers: {
           "ngrok-skip-browser-warning": "relay",
           ...(room.memberToken ? { "x-relay-room-token": room.memberToken } : {}),
         },
       });
+      socket.relayUrl = wsUrl;
+      hostSocket = socket;
     } catch (err) {
       console.warn(`[relay-room] could not open ${wsUrl}: ${err.message || err}`);
       scheduleRetry();
@@ -317,7 +360,7 @@ async function main() {
     }
     let retried = false;
     function scheduleRetry() {
-      if (retried) return;
+      if (retried || (socket && hostSocket !== socket)) return;
       retried = true;
       const wait = hostBackoffMs;
       hostBackoffMs = Math.min(HOST_BACKOFF_MAX_MS, Math.round(hostBackoffMs * 1.8));
@@ -347,6 +390,7 @@ async function main() {
     // failures (e.g. a stale/offline host returning a non-101 response)
     // as an uncaught exception and kills the whole `relay serve` process.
     hostSocket.on("error", (err) => {
+      if (hostSocket !== socket) return;
       console.warn(`[relay-room] host connection failed (${wsUrl}): ${err.message || err}`);
       scheduleRetry();
     });
@@ -427,6 +471,13 @@ async function main() {
 
   function connectHostControl(room) {
     if (!room?.url || room.role !== "guest") return;
+    const wsUrl = `${room.url.replace(/^http/, "ws").replace(/\/$/, "")}/ws/control${
+      room.memberToken ? `?token=${encodeURIComponent(room.memberToken)}` : ""
+    }`;
+    // Startup, guest-room refresh and the patches socket's retry all call this. Tearing
+    // down a socket that is already open or still connecting to the same host meant
+    // the control channel was closed before it could ever finish its handshake.
+    if (socketLive(controlSocket, wsUrl)) return;
     if (controlRetryTimer) {
       clearTimeout(controlRetryTimer);
       controlRetryTimer = null;
@@ -438,16 +489,16 @@ async function main() {
         /* ignore */
       }
     }
-    const wsUrl = `${room.url.replace(/^http/, "ws").replace(/\/$/, "")}/ws/control${
-      room.memberToken ? `?token=${encodeURIComponent(room.memberToken)}` : ""
-    }`;
+    let socket;
     try {
-      controlSocket = new WebSocket(wsUrl, {
+      socket = new WebSocket(wsUrl, {
         headers: {
           "ngrok-skip-browser-warning": "relay",
           ...(room.memberToken ? { "x-relay-room-token": room.memberToken } : {}),
         },
       });
+      socket.relayUrl = wsUrl;
+      controlSocket = socket;
     } catch (err) {
       console.warn(`[relay-room] control socket failed: ${err.message || err}`);
       scheduleControlRetry();
@@ -456,7 +507,9 @@ async function main() {
     roomControl.attach(controlSocket);
     let retried = false;
     function scheduleControlRetry() {
-      if (retried) return;
+      // A socket that has already been replaced must not schedule a reconnect: that
+      // reconnect would close the current, healthy socket and loop forever.
+      if (retried || (socket && controlSocket !== socket)) return;
       retried = true;
       const wait = controlBackoffMs;
       controlBackoffMs = Math.min(HOST_BACKOFF_MAX_MS, Math.round(controlBackoffMs * 1.8));
@@ -472,6 +525,7 @@ async function main() {
       if (controlRetryTimer.unref) controlRetryTimer.unref();
     }
     controlSocket.on("open", () => {
+      if (controlSocket !== socket) return;
       controlBackoffMs = 200;
       roomControl.send({ type: "join" });
       console.log(`[relay-room] control stream ${room.url}`);
@@ -494,6 +548,7 @@ async function main() {
       }
     });
     controlSocket.on("error", (err) => {
+      if (controlSocket !== socket) return;
       console.warn(`[relay-room] control failed: ${err.message || err}`);
       scheduleControlRetry();
     });
@@ -1461,6 +1516,7 @@ async function main() {
 
   let tunnelWatchTimer = null;
   let tunnelMaintainInFlight = null;
+  let lastTunnelProbeAt = 0;
 
   function stopTunnelWatch() {
     if (tunnelWatchTimer) clearInterval(tunnelWatchTimer);
@@ -1509,19 +1565,20 @@ async function main() {
       return;
     }
     const port = parsePort(process.argv);
-    let listedUrl = null;
-    try {
-      const res = await fetch("http://127.0.0.1:4040/api/tunnels");
-      if (res.ok) {
-        const tunnels = (await res.json()).tunnels || [];
-        listedUrl =
-          (tunnels.find((t) => String(t.public_url || "").startsWith("https://")) || tunnels[0] || {}).public_url || null;
+    let listedUrl = activeTunnelUrl();
+    if (!listedUrl) {
+      try {
+        const res = await fetch("http://127.0.0.1:4040/api/tunnels");
+        if (res.ok) {
+          const tunnels = (await res.json()).tunnels || [];
+          listedUrl =
+            (tunnels.find((t) => String(t.public_url || "").startsWith("https://")) || tunnels[0] || {}).public_url || null;
+        }
+      } catch {
+        listedUrl = null;
       }
-    } catch {
-      listedUrl = null;
     }
-    // Inspector already has a tunnel: reuse it. Do not call ensureTunnel (and
-    // never spawnNgrok) just because a public-URL probe would be slow or fail.
+    // Active tunnel (cloudflared / RELAY_PUBLIC_URL / inspector) already live: reuse it.
     let url = listedUrl;
     if (!listedUrl) {
       const now = Date.now();
@@ -2432,7 +2489,8 @@ async function main() {
         hint: "Leave this room first if you want to host your own.",
       });
     }
-    const result = await shareRoom(parsePort(process.argv), shareExtras(project));
+    const customUrl = req.body?.url ? String(req.body.url).trim().replace(/\/$/, "") : null;
+    const result = await shareRoom(parsePort(process.argv), { ...shareExtras(project), ...(customUrl ? { url: customUrl } : {}) });
     if (result.ok) {
       syncRoomLocks();
       result.warning = await publishAndWatch(result.room, project);
@@ -2715,8 +2773,11 @@ async function main() {
       ? loadRegistry().projects.find((p) => p.id === req.body.projectId) || currentProject()
       : currentProject();
     if (!project) return res.status(404).json({ error: "no_local_repo" });
-    const login = String(req.body?.login || "").trim();
-    if (!login) return res.status(400).json({ error: "login_required" });
+    // Same rule as the socket path: a member may only publish its own history. A remote
+    // caller is whoever its member token says; the login in the body is only trusted locally.
+    const remote = Boolean(req.roomMember) || isRemoteRequest(req);
+    const login = remote ? req.roomMember?.login || "" : String(req.body?.login || "").trim();
+    if (!login) return res.status(remote ? 401 : 400).json({ error: remote ? "member_token_required" : "login_required" });
     ingestPeerHistory(login, req.body?.snapshot, project);
     res.json({ ok: true });
   });
@@ -3083,6 +3144,7 @@ async function main() {
     const room = loadRoom();
     if (room?.role === "host") {
       stopTunnelWatch();
+      killCloudflared();
       try {
         await publishSignal(
           { ...room, live: false },
@@ -3418,9 +3480,28 @@ async function main() {
   if (existingRoom?.url) syncRoomLocks();
 
   const port = parsePort(process.argv);
+  const bindHost = process.env.RELAY_BIND_HOST || "127.0.0.1";
   const server = http.createServer(app);
-  wss = new WebSocketServer({ server, path: "/ws/patches" });
-  wssControl = new WebSocketServer({ server, path: "/ws/control" });
+  // Two servers attached with `{ server, path }` both see every upgrade, and each rejects
+  // the other's path with a 400: /ws/control never connected and /ws/patches got a 400
+  // written into its upgraded socket. One upgrade handler routes by path instead.
+  wss = new WebSocketServer({ noServer: true });
+  wssControl = new WebSocketServer({ noServer: true });
+  server.on("upgrade", (req, socket, head) => {
+    let pathname = "";
+    try {
+      pathname = new URL(req.url, "http://relay.local").pathname;
+    } catch {
+      /* malformed request line */
+    }
+    const target = pathname === "/ws/patches" ? wss : pathname === "/ws/control" ? wssControl : null;
+    if (!target) {
+      socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    target.handleUpgrade(req, socket, head, (ws) => target.emit("connection", ws, req));
+  });
 
   /**
    * Identity is decided once, at the handshake, and never re-read from a frame.
@@ -3710,9 +3791,9 @@ async function main() {
     }
     throw err;
   });
-  server.listen(port, "127.0.0.1", () => {
+  server.listen(port, bindHost, () => {
     writeState(process.cwd(), coordPort, { apiPort: port });
-    console.log(`[relay-api] http://127.0.0.1:${port}`);
+    console.log(`[relay-api] http://${bindHost}:${port}`);
     console.log(`[relay-coordinator] 127.0.0.1:${coordPort}`);
     console.log(`[relay-ui] ${UI_ORIGIN}`);
     const hosted = loadRoom();

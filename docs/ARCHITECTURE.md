@@ -166,7 +166,7 @@ frame closes the socket with `4401 membership_revoked`.
 
 ## Storage
 
-Everything is a JSON file. Nothing is a database.
+Core coordination state is stored in JSON files; project-wide multi-agent memory is stored in an optional per-project FalkorDB graph ([Memory graph](./MEMORY-GRAPH.md)).
 
 | | Where | Contains |
 |---|---|---|
@@ -190,8 +190,9 @@ this machine's own `memberToken` in the clear. It is never served raw: `/api/roo
 
 | Path | Responsibility |
 |---|---|
-| `cli/relay.js` | Command dispatch, `relay serve` supervision, `relay doctor` |
+| `cli/relay.js`, `cli/graph.js` | Command dispatch, `relay serve` supervision, `relay doctor`, `relay graph` |
 | `backend/server.js` | API server, room orchestration, WebSocket servers |
+| `backend/lib/falkor/` | FalkorDB memory graph: projector, batch writer, named Cypher queries, PageRank/CDLP analytics, migrations, retention |
 | `backend/coordinator/lockTable.js` | The lock table: claim, release, heartbeat, reads, waiters, sweep |
 | `backend/coordinator/server.js` | Coordinator HTTP surface and `createCoordinator()` |
 | `backend/coordinator/client.js` | The fallback chain hooks use to reach a coordinator |
