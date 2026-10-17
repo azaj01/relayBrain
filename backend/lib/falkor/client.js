@@ -68,16 +68,21 @@ class FalkorClient {
   ok() {
     this.breaker.state = "closed";
     this.breaker.failures = 0;
+    this.breaker.lastError = null;
     this.breaker.lastOkAt = Date.now();
   }
 
   fail(err) {
     const b = this.breaker;
     const message = String(err?.message || err);
-    b.lastError = message;
-    // Cypher errors are our bugs, not an outage; only the transport trips the breaker.
+    // Cypher errors are our bugs (or a graph that doesn't exist yet), not an outage:
+    // only transport failures trip the breaker or count as the connection's last error.
     const transport = /ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|closed|offline|socket|connect/i.test(message);
-    if (!transport && !err?.timeout) return;
+    if (!transport && !err?.timeout) {
+      b.lastQueryError = message;
+      return;
+    }
+    b.lastError = message;
     b.failures += 1;
     if (b.state === "probing" || transport || b.failures >= 3) {
       b.state = "open";
@@ -141,6 +146,7 @@ class FalkorClient {
       state: this.breaker.state,
       failures: this.breaker.failures,
       lastError: this.breaker.lastError,
+      lastQueryError: this.breaker.lastQueryError || null,
       lastOkAt: this.breaker.lastOkAt || null,
       reopensAt: this.breaker.state === "open" ? this.breaker.until : null,
       connected: Boolean(this.db),

@@ -18,6 +18,19 @@ test("config: disabled without url, enabled with url, kill-switch wins", () => {
   assert.equal(readConfig({ RELAY_FALKOR_TEXT: "0" }).storeText, false);
 });
 
+test("config: saved file is used when env is unset; env wins; kill switch beats both", () => {
+  const file = { url: "falkor://saved:6379", storeText: false, prefix: "demo_" };
+  const fromFile = readConfig({}, file);
+  assert.deepEqual([fromFile.enabled, fromFile.url, fromFile.source, fromFile.storeText, fromFile.prefix], [true, "falkor://saved:6379", "file", false, "demo_"]);
+  const fromEnv = readConfig({ RELAY_FALKOR_URL: "falkor://env:1", RELAY_FALKOR_TEXT: "1" }, file);
+  assert.deepEqual([fromEnv.url, fromEnv.source, fromEnv.storeText], ["falkor://env:1", "env", true]);
+  assert.equal(readConfig({ RELAY_FALKOR_DISABLED: "1" }, file).enabled, false);
+  assert.equal(readConfig({}, { url: "falkor://x:1", disabled: true }).enabled, false);
+  const { validUrl } = require("./config");
+  assert.ok(validUrl("falkor://user:pass@host.cloud:6379") && validUrl("rediss://h:1"));
+  assert.ok(!validUrl("http://h:1") && !validUrl("falkor://") && !validUrl(""));
+});
+
 test("graph names are sanitized per project", () => {
   const c = new FalkorClient(cfg("falkor://localhost:1"));
   assert.equal(c.graphName("proj_ab-12/..x"), "relay_test_proj_ab_12___x");

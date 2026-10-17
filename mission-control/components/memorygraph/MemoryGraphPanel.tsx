@@ -7,6 +7,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useRelay } from "@/lib/RelayContext";
+import { apiUrl } from "@/lib/api";
 import { MarkdownView } from "@/lib/markdown";
 import { graphHealth, useGraphTick, useQuery, type Brief, type GraphNode, type Health, type Neighborhood, type QueryResult } from "./useMemoryGraph";
 import m from "./memorygraph.module.css";
@@ -367,10 +368,63 @@ function OpenHint({ onOpen }: { onOpen: (p: string) => void }) {
 
 /* ------------------------------- panel ------------------------------- */
 
+function EnableGraph({ onEnabled }: { onEnabled: () => void }) {
+  const [url, setUrl] = useState("falkor://localhost:6379");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  async function enable() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch(apiUrl("/api/graph/enable"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const body = await res.json();
+      if (!body.ok) setMessage(body.reason || "could not enable");
+      else {
+        setMessage(body.warning || body.note || null);
+        onEnabled();
+      }
+    } catch (err) {
+      setMessage(String((err as Error).message || err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={m.off}>
+      <p>
+        <b>The memory graph is not enabled on this relay.</b>
+      </p>
+      <p className={m.muted}>
+        Start FalkorDB with <code>relay graph up</code> (Docker), then enable it here. Existing history is imported with{" "}
+        <code>relay graph rebuild</code>.
+      </p>
+      <form
+        className={m.enableRow}
+        onSubmit={(e) => {
+          e.preventDefault();
+          enable();
+        }}
+      >
+        <input className={m.input} value={url} onChange={(e) => setUrl(e.target.value)} aria-label="FalkorDB URL" />
+        <button className={m.enableBtn} disabled={busy} type="submit">
+          {busy ? "Enabling…" : "Enable"}
+        </button>
+      </form>
+      {message ? <p className={m.problem}>{message}</p> : null}
+    </div>
+  );
+}
+
 function Panel() {
   const { selectedProjectId } = useRelay();
   const projectId = selectedProjectId || null;
-  const tick = useGraphTick(projectId);
+  const liveTick = useGraphTick(projectId);
+  const [kick, setKick] = useState(0);
+  const tick = liveTick + kick;
   const [health, setHealth] = useState<Health | null>(null);
   const [file, setFile] = useState<string | null>(null);
 
@@ -387,9 +441,12 @@ function Panel() {
   useEffect(() => {
     setFile(null);
   }, [projectId]);
+  // Open on the top hotspot shown in the list, so the canvas and the list agree.
+  const topHotspot = ((hotspots.data?.rows as Row[] | undefined) || [])[0]?.file as string | undefined;
   useEffect(() => {
-    if (!file && hood?.focus) setFile(hood.focus);
-  }, [file, hood?.focus]);
+    if (!file && topHotspot) setFile(topHotspot);
+    else if (!file && hood?.focus) setFile(hood.focus);
+  }, [file, topHotspot, hood?.focus]);
 
   if (!projectId) return null;
   const counts = Object.fromEntries(((overview.data?.rows as { label: string; count: number }[]) || []).map((r) => [r.label, r.count]));
@@ -414,15 +471,7 @@ function Panel() {
       </div>
 
       {off ? (
-        <div className={m.off}>
-          <p>
-            <b>The memory graph is not enabled on this relay.</b>
-          </p>
-          <p className={m.muted}>
-            Start FalkorDB with <code>npm run falkor:up</code>, then restart <code>relay serve</code> with <code>RELAY_FALKOR_URL=falkor://localhost:6379</code>. Existing history is
-            imported with <code>npm run falkor:rebuild -- &lt;projectId&gt;</code>.
-          </p>
-        </div>
+        <EnableGraph onEnabled={() => setKick((k) => k + 1)} />
       ) : (
         <>
           {(blocks.data?.rows as Row[] | undefined)?.length ? (

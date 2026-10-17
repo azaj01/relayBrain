@@ -20,6 +20,21 @@
 
 .off { padding: 26px 18px; border: 1px dashed var(--border); border-radius: var(--radius); line-height: 1.6; }
 .problem { color: var(--waiting); font-size: 12px; margin: 6px 0; }
+.enableRow { display: flex; gap: 8px; max-width: 520px; margin-top: 12px; }
+.enableBtn {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 16px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  flex: none;
+}
+.enableBtn:hover { background: var(--accent-hover); }
+.enableBtn:disabled { opacity: 0.6; cursor: default; }
 
 .alerts { display: flex; flex-direction: column; gap: 4px; }
 .alert {
