@@ -6,9 +6,12 @@ services:
       - "6379:6379"
       - "3010:3000"
     environment:
-      REDIS_ARGS: "--appendonly yes --appendfsync everysec"
+      # RDB snapshots, not AOF: replaying FalkorDB's AOF effect stream can segfault
+      # on restart (see #21). Relay re-sends anything a lost snapshot missed.
+      REDIS_ARGS: "--save 30 1 --save 300 10 --appendonly no"
     volumes:
-      - falkordb_data:/data
+      # The image writes here; /data only holds a symlink, so mounting /data persisted nothing.
+      - falkordb_data:/var/lib/falkordb/data
     restart: unless-stopped
 volumes:
   falkordb_data: {}

@@ -37,6 +37,7 @@ class FalkorClient {
   }
 
   async connection() {
+    if (this.closed) throw Object.assign(new Error("falkor client closed"), { breaker: true });
     if (this.db) return this.db;
     if (this.connecting) return this.connecting;
     this.connecting = (async () => {
@@ -147,6 +148,8 @@ class FalkorClient {
   }
 
   async close() {
+    // A closed client stays closed: late timers must not reopen a socket that keeps the process alive.
+    this.closed = true;
     const db = this.db;
     this.db = null;
     if (db) await db.close().catch(() => undefined);

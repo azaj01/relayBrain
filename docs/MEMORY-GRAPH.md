@@ -128,6 +128,22 @@ With no URL set, relay behaves exactly as before. If FalkorDB goes down mid-sess
 coordinating. History is replayed from `memory.json` when FalkorDB comes back, and non-replayable events (patches, blocks) are
 buffered with a bound.
 
+## Persistence and recovery
+
+- `docker-compose.falkor.yml` mounts the volume at **`/var/lib/falkordb/data`**, where the image actually writes. (`/data` in the
+  image is only a symlink, so a volume mounted there persists nothing.)
+- Persistence uses **RDB snapshots** (`--save 30 1 --save 300 10`), **not AOF**: replaying FalkorDB's AOF effect stream crashed
+  4.22.1 on restart (#21).
+- A snapshot can miss the last ≤30 s. Every ingest stamps `Meta.lastIngestAt` in the graph before saving its local cursor. On
+  the first ingest after relay starts, a cursor newer than the graph's stamp means data was lost (or the database is new or
+  wiped), so relay re-sends the history. `MERGE` makes the re-send idempotent.
+- The full rebuild is still available: `npm run falkor:rebuild -- <projectId|all>`. It only knows what `memory.json` still holds,
+  so the re-send above is the normal path.
+
+If FalkorDB ever crash-loops on start: `docker logs relay-falkordb`, copy the data out
+(`docker cp relay-falkordb:/var/lib/falkordb/data ./falkordb-backup`), then `docker compose -f docker-compose.falkor.yml down`
+and `up -d`. Relay re-sends history on its next sync.
+
 ## Design notes
 
 - **Single writer.** Only `relay serve` writes. Per-agent MCP stdio processes read through `relay serve`'s HTTP API, and their

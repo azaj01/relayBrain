@@ -33,7 +33,8 @@ async function bootstrap(client, projectId) {
     projectId,
     `MERGE (m:Meta {key: 'meta'})
      ON CREATE SET m.schemaVersion = $schema, m.ingestVersion = $ingest, m.createdAt = $now
-     RETURN m.schemaVersion AS schemaVersion, m.ingestVersion AS ingestVersion, m.createdAt AS createdAt`,
+     RETURN m.schemaVersion AS schemaVersion, m.ingestVersion AS ingestVersion, m.createdAt AS createdAt,
+            m.lastIngestAt AS lastIngestAt`,
     { schema: SCHEMA_VERSION, ingest: INGEST_VERSION, now: Date.now() }
   );
 
@@ -47,23 +48,26 @@ async function bootstrap(client, projectId) {
     await client.write(projectId, `CREATE FULLTEXT INDEX FOR (n:${label}) ON (n.${prop})`);
   }
 
-  // Unique constraints are a backstop only (MERGE already guarantees one node per key); never block on them.
-  client
-    .graph(projectId)
-    .then(async (graph) => {
-      const current = await client.read(projectId, "CALL db.constraints() YIELD label, properties RETURN label, properties");
-      for (const label of KEYED_LABELS) {
-        if (current.some((c) => c.label === label && (c.properties || []).includes("key"))) continue;
-        await graph.constraintCreate(ConstraintType.UNIQUE, EntityType.NODE, label, "key").catch(() => undefined);
-      }
-    })
-    .catch(() => undefined);
+  // Unique constraints are a backstop (MERGE already guarantees one node per key). Awaited
+  // on purpose: CONSTRAINT CREATE returns PENDING at once, and a fire-and-forget call that
+  // lands after the graph was deleted silently recreates it.
+  try {
+    const graph = await client.graph(projectId);
+    const current = await client.read(projectId, "CALL db.constraints() YIELD label, properties RETURN label, properties");
+    for (const label of KEYED_LABELS) {
+      if (current.some((c) => c.label === label && (c.properties || []).includes("key"))) continue;
+      await graph.constraintCreate(ConstraintType.UNIQUE, EntityType.NODE, label, "key").catch(() => undefined);
+    }
+  } catch {
+    /* constraints are optional */
+  }
 
   const row = meta[0] || {};
   return {
     schemaVersion: row.schemaVersion,
     ingestVersion: row.ingestVersion,
     createdAt: row.createdAt,
+    lastIngestAt: row.lastIngestAt || 0,
     needsRebuild: row.schemaVersion !== SCHEMA_VERSION || row.ingestVersion !== INGEST_VERSION,
   };
 }

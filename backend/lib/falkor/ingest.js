@@ -13,12 +13,31 @@ function log(projectId, msg) {
   console.log(`[relay-falkor] ${projectId}: ${msg}`);
 }
 
+// The cursor says what we sent; the graph's Meta.lastIngestAt says what it kept. RDB
+// snapshots can lose the last few seconds, and a FalkorDB can be wiped or swapped,
+// so a cursor newer than the graph means re-send everything (MERGE keeps it idempotent).
+const SNAPSHOT_GRACE_MS = 5000;
+const reconciled = new Set();
+
+function cursorFor(projectId, info, opts) {
+  const cur = cursor.load(projectId);
+  if (opts.full) return { ...cur, seen: [] };
+  if (!reconciled.has(projectId)) {
+    reconciled.add(projectId);
+    if (cur.seen.length && cur.updatedAt > (info?.lastIngestAt || 0) + SNAPSHOT_GRACE_MS) {
+      log(projectId, "graph is behind the ingest cursor (lost snapshot or new database); re-sending history");
+      return { ...cur, seen: [] };
+    }
+  }
+  return cur;
+}
+
 /** Projects + writes everything in `history` the cursor hasn't confirmed yet. */
 async function ingestHistory(projectId, history, workspacePath, opts = {}) {
   const { client, state } = api;
   const stats = api.projectStats(projectId);
-  await api.ensureProject(projectId);
-  const cur = opts.full ? { ...cursor.load(projectId), seen: [] } : cursor.load(projectId);
+  const info = await api.ensureProject(projectId);
+  const cur = cursorFor(projectId, info, opts);
   const seen = cursor.seenSet(cur);
   const projection = projectHistory(history, {
     workspacePath,
@@ -30,6 +49,8 @@ async function ingestHistory(projectId, history, workspacePath, opts = {}) {
 
   const t = Date.now();
   const result = await writeProjection(client, projectId, projection);
+  // Stamp the graph before the cursor, so the cursor can never look older than what the graph holds.
+  await client.write(projectId, "MERGE (m:Meta {key:'meta'}) SET m.lastIngestAt = $now RETURN 1", { now: Date.now() });
   cursor.commit(projectId, cur, (history || []).map((e) => e.id).filter(Boolean));
   stats.lastIngestAt = Date.now();
   stats.lastIngestCount = result.turnsCreated + result.editsCreated;
@@ -183,4 +204,9 @@ function configure(falkor) {
   api = { ...falkor, client: falkor.state.client, state: falkor.state };
 }
 
-module.exports = { start, configure, ingestHistory, ingestPeer, flush, flushPatches };
+/** Forget per-process state, as a restart would. */
+function _resetForTests() {
+  reconciled.clear();
+}
+
+module.exports = { start, configure, ingestHistory, ingestPeer, flush, flushPatches, _resetForTests };

@@ -48,6 +48,7 @@ async function main() {
   }
   for (const p of projects) await rebuildOne(p, keep);
   await falkor.state.client.close();
+  process.exit(0);
 }
 
 main().catch((err) => {
