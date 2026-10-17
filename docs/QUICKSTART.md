@@ -98,6 +98,23 @@ To confirm the wiring end to end, ask any agent `/relay ask`. It calls the Relay
 
 ---
 
+## 5b. Turn on the memory graph (optional, needs Docker)
+
+The memory graph remembers every agent session, the prompt behind every change, and every
+time agents got in each other's way. It tells a blocked agent what the holder is working on,
+and briefs agents before they touch a file.
+
+```bash
+relay graph up        # starts FalkorDB in Docker
+relay graph enable    # saves the URL and switches the running relay on
+relay graph rebuild   # optional: import history you already have
+```
+
+Then open Mission Control → **Memory Graph**. The full guide, including hosted FalkorDB and
+troubleshooting, is in [Memory graph → Setup](./MEMORY-GRAPH.md#setup).
+
+---
+
 ## 6. Bring in a teammate (optional)
 
 The host — the person whose machine will hold the shared lock table:
@@ -128,8 +145,9 @@ teams](./ROOMS.md).
 ## Verifying it works
 
 ```bash
-relay status     # health: room, role, host, ports
-relay doctor     # walks the chain the board depends on and names the broken link
+relay status        # health: room, role, host, ports
+relay doctor        # walks the chain the board depends on and names the broken link
+relay graph status  # memory graph: config, connection, last ingest per project
 ```
 
 The most common surprise is a board that looks empty while locking is in fact working

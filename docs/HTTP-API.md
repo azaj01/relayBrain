@@ -262,7 +262,8 @@ Direct `lockTable.heartbeat(body)`.
 Server-sent events, optionally scoped by `?projectId`. Registers presence for the caller
 (identified by the `x-relay-user` header or the session login) and deregisters on
 disconnect. Event names include `locks`, `presence`, `activity`, `history`, `agents`,
-`projects`, `graph`, `central` and `rewind`.
+`projects`, `graph` (the dependency graph), `memory-graph` (the FalkorDB memory graph
+changed), `central` and `rewind`.
 
 ### `POST /api/ensure-workspace`
 
@@ -304,6 +305,46 @@ workspace watcher.
 ### `GET /api/memory`
 
 The whole `memory.json` for `?projectId`.
+
+---
+
+## Memory graph
+
+See [Memory graph](./MEMORY-GRAPH.md). These routes exist even when the graph is off on
+this machine, because a room guest's queries are forwarded to the host's graph.
+
+### `GET /api/graph/health`
+
+`{ enabled, running, url, source: "env" | "file" | null, configFile, storeText, breaker,
+projects }`. `url` has any password masked. `breaker.state` is `closed` (connected), `open`
+(FalkorDB unreachable, retrying every 30 s) or `probing`. `projects[id]` carries
+`lastIngestAt`, `needsRebuild` and `lastError`.
+
+### `POST /api/graph/enable` · local requests only
+
+`{ url? }` (default `falkor://localhost:6379`) → saves `~/.relay/falkor.json` and starts the
+graph in the running process. Returns the health object plus `warning` when the database
+isn't reachable yet. **403** through the room tunnel, **400** for a URL that isn't
+`falkor[s]://` / `redis[s]://`.
+
+### `GET /api/graph/queries`
+
+`{ queries: [...] }`: the named queries below.
+
+### `GET|POST /api/graph/query/:name` · `requireRoomMember`
+
+Runs one named, read-only query. Parameters come from the query string or JSON body:
+`projectId` or `workspace` (to pick the project; defaults to the current one), `path`,
+`paths` (comma-separated in a query string), `q`, `agent`, `person`, `limit` (≤ 50).
+
+Names: `file_story`, `who_to_ask`, `contention_trace`, `search_memory`, `agent_activity`,
+`hotspots`, `overlaps`, `decision_trace`, `overview`, `session_brief` (returns `markdown` and
+`files`), `neighborhood` (returns `nodes` and `edges` around `path`, for the canvas).
+
+Success: `{ ok: true, projectId, source: "local" | "host", query, summary, cypher, params,
+rows }`. If this machine is a room guest, the query is answered by the host's graph through
+`POST /mcp`, falling back to the local graph when the tunnel is down. Off:
+`{ ok: false, reason: "falkor_disabled" }`. Bad input: **400** with `reason`.
 
 ---
 

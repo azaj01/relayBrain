@@ -88,12 +88,15 @@ File ─ CO_EDITED → File   (PageRank = hotspots, label propagation = work are
 - **Context before acting.** `relay_session_brief(paths)` hands any agent (Claude Code, Cursor, Codex, Copilot, Antigravity) who is on those files now and why, past blocks, decisions, the prompts behind recent changes, and who to ask.
 - **Graph algorithms as agent tools.** PageRank and label propagation over co-edited files find coordination hotspots and work areas. `relay_graph_query` exposes 10 named Cypher queries. Every answer ships with its Cypher.
 - **Shared across the room.** The host's graph is the room's memory. Guests query it over the existing tunnel, even without FalkorDB installed.
-- **Safe to add.** Single writer, idempotent `MERGE`s, a circuit breaker, and a full fail-open path: no `RELAY_FALKOR_URL` means relay behaves exactly as before.
+- **Safe to add.** Single writer, idempotent `MERGE`s, a circuit breaker, and a full fail-open path: with the graph off, relay behaves exactly as before.
 
 ```bash
-npm run falkor:up && export RELAY_FALKOR_URL=falkor://localhost:6379 && relay serve
-# Mission Control → Memory Graph tab  ·  docs: ./docs/MEMORY-GRAPH.md
+relay graph up        # FalkorDB in Docker
+relay graph enable    # save the URL; switches a running relay on
+relay serve           # Mission Control → Memory Graph tab
 ```
+
+Full setup (Windows/macOS/Linux, hosted FalkorDB, troubleshooting): [docs/MEMORY-GRAPH.md → Setup](./docs/MEMORY-GRAPH.md#setup).
 
 ## Quick start
 
@@ -128,7 +131,7 @@ Now start agents as usual. Hooks claim and release locks automatically — nobod
 | attach an existing repo | `relay add /path/to/repo` |
 | fresh clone | `relay clone <url> [dir]` |
 
-Requires **Node.js 18+** (20+ recommended). No hosted backend, no login server. The memory graph needs FalkorDB (`npm run falkor:up`, Docker); without it, relay runs on files alone.
+Requires **Node.js 18+** (20+ recommended). No hosted backend, no login server. The memory graph needs FalkorDB (`relay graph up`, Docker); without it, relay runs on files alone.
 
 </details>
 

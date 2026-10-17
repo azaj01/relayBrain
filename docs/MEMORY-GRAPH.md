@@ -131,23 +131,102 @@ the exact brief an agent gets.
 
 ## Setup
 
+The same commands work on Windows, macOS and Linux. No environment variables are needed.
+
+### 1. Prerequisites
+
+- Relay installed and a repo attached ([Quickstart](./QUICKSTART.md)): Node 20+, `relay init` / `relay add .` in the repo.
+- **Docker** (Docker Desktop on Windows/macOS, the Docker engine on Linux) to run FalkorDB locally. If you use a hosted
+  FalkorDB (for example FalkorDB Cloud), skip Docker and use its URL in step 3.
+
+### 2. Start FalkorDB
+
 ```bash
-npm run falkor:up                                   # FalkorDB on :6379, browser UI on :3010
-export RELAY_FALKOR_URL=falkor://localhost:6379     # PowerShell: $env:RELAY_FALKOR_URL="falkor://localhost:6379"
-relay serve                                         # or: npm run dev
-npm run falkor:rebuild -- <projectId|all>           # optional: import existing memory.json history
+relay graph up
 ```
+
+This starts the `falkordb/falkordb` container from `docker-compose.falkor.yml`: the database on `localhost:6379`, FalkorDB's own
+browser UI on <http://localhost:3010>, and data in a named Docker volume that survives restarts.
+
+### 3. Turn the graph on
+
+```bash
+relay graph enable                                    # local Docker: falkor://localhost:6379
+relay graph enable falkor://default:PASSWORD@HOST:PORT  # hosted FalkorDB
+```
+
+`enable` checks that the database answers, saves the URL to `~/.relay/falkor.json` (readable only by you), and, if `relay serve`
+is already running, switches it on immediately. You can also do this from Mission Control: **Memory Graph** tab → **Enable**.
+
+### 4. Refresh agent configs (existing workspaces only)
+
+Workspaces set up before the memory graph need their agent wiring refreshed once, so each agent's MCP entry learns its name
+(`RELAY_AGENT_LABEL`), the new instructions, and the updated Copilot edit matcher:
+
+```bash
+relay init        # in each repo, then restart your agents
+```
+
+### 5. Start relay and check it
+
+```bash
+relay serve
+relay graph status
+```
+
+`relay graph status` should report `graph running, connected` and the database as reachable. `relay doctor` shows the same thing
+as one line.
+
+### 6. Bring in history you already have (optional)
+
+```bash
+relay graph rebuild        # every project; or: relay graph rebuild <projectId>
+```
+
+Project ids are listed by `curl http://127.0.0.1:3001/api/projects`. New agent activity is ingested automatically when each
+agent turn ends.
+
+### 7. Use it
+
+- **Mission Control** → **Memory Graph** tab (`http://localhost:3002/?tab=graph`)
+- **In any agent:** "call relay_session_brief for src/auth.ts", or `relay_graph_query` with `query: "file_story"`
+- **Room guests:** nothing to install. Their agents' graph queries go to the host's graph over the room tunnel.
+
+### Environment variables (optional)
+
+Everything above works without these. Set them only to override the saved config for one run.
 
 | Env | Default | Meaning |
 |---|---|---|
-| `RELAY_FALKOR_URL` | unset = off | `falkor://[user:pass@]host:port` |
-| `RELAY_FALKOR_DISABLED` | `0` | kill switch |
+| `RELAY_FALKOR_URL` | from `~/.relay/falkor.json` | `falkor://[user:pass@]host:port`; overrides the saved URL |
+| `RELAY_FALKOR_DISABLED` | `0` | `1` = off, whatever is saved |
 | `RELAY_FALKOR_TEXT` | `1` | `0` = metadata-only graph (no chat text or diffs) |
 | `RELAY_FALKOR_GRAPH_PREFIX` | `relay_` | graph name prefix (`<prefix><projectId>`) |
 
-With no URL set, relay behaves exactly as before. If FalkorDB goes down mid-session, a circuit breaker opens and relay keeps
-coordinating. History is replayed from `memory.json` when FalkorDB comes back, and non-replayable events (patches, blocks) are
-buffered with a bound.
+Setting one for a single run:
+
+| Shell | Command |
+|---|---|
+| bash / zsh | `RELAY_FALKOR_TEXT=0 relay serve` |
+| PowerShell | `$env:RELAY_FALKOR_TEXT = "0"; relay serve` |
+| cmd | `set RELAY_FALKOR_TEXT=0 && relay serve` |
+
+With no URL saved or set, relay behaves exactly as it did before the memory graph. If FalkorDB goes down mid-session, relay keeps
+coordinating; history is re-sent when FalkorDB comes back, and non-replayable events (patches, blocks) are buffered with a bound.
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `relay graph up`: *Docker is not running* (Windows: `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`) | Start Docker Desktop, wait until it says it's running, run `relay graph up` again |
+| `relay graph up` fails with a port in use | Something else (often a local Redis) holds 6379. Change the host port in `docker-compose.falkor.yml` (`"6380:6379"`) and `relay graph enable falkor://localhost:6380` |
+| `relay graph status`: *FalkorDB unreachable (retrying)* | The container stopped (`docker ps`). `relay graph up`. Relay reconnects by itself within ~30 s |
+| Memory Graph tab: *not enabled on this relay* | Click **Enable**, or `relay graph enable` |
+| Graph is empty | Ingest runs when an agent turn ends (Stop hook) or on `relay_sync`. For history from before, `relay graph rebuild`. Check `relay doctor` that hooks reach relay |
+| `relay graph status` shows **NEEDS REBUILD** | An update changed how history is stored: `relay graph rebuild` |
+| `RELAY_FALKOR_URL` seems ignored, or wins over `enable` | The env var beats the saved file. `relay graph status` shows which one is in use (`from env` / `from file`) |
+| Container crash-loops after a hard shutdown | See [Persistence and recovery](#persistence-and-recovery) |
+| Running a second relay for testing without touching your real setup | Point `HOME` (and `USERPROFILE` on Windows) at a scratch directory and set `RELAY_SKIP_GLOBAL_HOOKS=1`, so the test relay doesn't rewrite `~/.claude` / `~/.cursor` hooks |
 
 ## Persistence and recovery
 

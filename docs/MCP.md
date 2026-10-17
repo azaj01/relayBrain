@@ -1,13 +1,13 @@
 # MCP reference
 
-Relay exposes the same fifteen tools over two transports. The tool surface itself
+Relay exposes the same seventeen tools over two transports. The tool surface itself
 (`backend/mcp/tools.js`) has no transport attached — both feed it a context object, so
 neither grows its own copy of the logic.
 
 | Transport | Started by | Reaches | Access |
 |---|---|---|---|
-| **stdio** — `backend/mcp/server.js` | The agent, one process per session | This machine | Full: all fifteen tools |
-| **HTTP** — `POST /mcp` | Any MCP client, over the room tunnel | The host | Read-only for remotes: nine tools |
+| **stdio** — `backend/mcp/server.js` | The agent, one process per session | This machine | Full: all seventeen tools |
+| **HTTP** — `POST /mcp` | Any MCP client, over the room tunnel | The host | Read-only for remotes: eleven tools |
 
 Protocol version: `2024-11-05`. Server info: `{ name: "relay", version: "0.1.0" }`.
 
@@ -27,7 +27,8 @@ config:
 | Antigravity | `.agents/mcp_config.json` | `mcpServers.relay` |
 
 The entry is the current Node executable running `backend/mcp/server.js`, with
-`RELAY_WORKSPACE_PATH` set to the workspace. Global equivalents are written into your home
+`RELAY_WORKSPACE_PATH` set to the workspace and `RELAY_AGENT_LABEL` set to that agent's name (so
+decisions and tasks recorded over MCP are attributed to it). Global equivalents are written into your home
 directory with no workspace pinned.
 
 Existing `mcpServers` entries are merged, not replaced.
@@ -61,11 +62,12 @@ This works from a machine with no Relay installed at all. It is read-only.
 
 ## Read-only boundary
 
-Nine tools are available to remote callers:
+Eleven tools are available to remote callers:
 
 `relay_get_chat_history` · `relay_status` · `relay_get_project_context` ·
 `relay_get_recent_changes` · `relay_get_decisions` · `relay_get_active_tasks` ·
-`relay_get_conflicts` · `relay_room_brief` · `relay_get_collision_stats`
+`relay_get_conflicts` · `relay_room_brief` · `relay_get_collision_stats` ·
+`relay_session_brief` · `relay_graph_query`
 
 Everything else writes somewhere — the lock table, Central, `memory.json` — and would
 write it as *the host*: the host's workspace path, the host's user, an agent ID the host
@@ -158,11 +160,49 @@ Full JSON context compiled from the last 500 Central events.
 
 #### `relay_report_decision` *(local only)* · `relay_get_decisions`
 
-`{ decision_id, decision, status }` (status defaults to `open`) and the read side.
+`{ decision_id, decision, status, files? }` (status defaults to `open`) and the read side.
+`files` (repo-relative paths) links the decision to those files in the memory graph, so
+agents about to touch them are told about it.
 
 #### `relay_update_task` *(local only)* · `relay_get_active_tasks`
 
-`{ task_id, description, status }` (status defaults to `open`) and the read side.
+`{ task_id, description, status, files? }` (status defaults to `open`) and the read side.
+
+### Memory graph
+
+Both read the FalkorDB memory graph ([Memory graph](./MEMORY-GRAPH.md)). They are
+read-only, so they are available to room guests, whose queries are answered by the host's
+graph. With the graph off they return `{ ok: false, reason: "falkor_disabled" }`.
+
+#### `relay_session_brief`
+
+`{ paths: string[] }`. Agents are instructed to call this before editing files they haven't
+touched in the session. For each file it returns, as markdown and data:
+
+- who is editing it right now and what they're working on
+- past blocks (who was blocked by whom, and what the holder was doing)
+- decisions about it
+- the user prompts behind its recent changes, across every agent and teammate
+- who to ask
+- files in the same work area touched recently
+
+#### `relay_graph_query`
+
+`{ query, path?, paths?, q?, agent?, person?, limit? }` runs one named, parameterized Cypher
+query. Every answer includes the Cypher that produced it.
+
+| `query` | Answers |
+|---|---|
+| `file_story` | Every change to `path`, newest first, with the prompt that caused it |
+| `who_to_ask` | People (and their agents) who know `path` best |
+| `contention_trace` | Blocks on `path` (or all): holder, what it was doing, who wanted it |
+| `search_memory` | Full-text search over every agent conversation (`q`) |
+| `agent_activity` | Sessions of an `agent` and/or `person`, with intent and files |
+| `hotspots` | Files ranked by PageRank over co-edits, with overlap and block counts |
+| `overlaps` | Two different agents changed the same file within minutes |
+| `decision_trace` | Decisions about `path` (or all), with author and session |
+| `session_brief` | Same as `relay_session_brief` (`paths`) |
+| `overview` | Node counts by label |
 
 ---
 
