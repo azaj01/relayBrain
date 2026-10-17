@@ -70,6 +70,24 @@ They're working on: "switch the login flow to JWT tokens" (2 min ago).
 The holder's intent comes from an in-process cache (filled on ingest, and refilled from the graph after a restart). The lock
 path never waits on the database.
 
+#### How a lock finds its session, per agent
+
+A lock id is `<label>:<host>:<session>` (`hooks/relay-hook-lib.js` → `lockAgentIdFor`). The session must be the same id the
+transcript parser gives that conversation, or the graph can't connect the lock to what the holder was doing. Both sides use one
+function, `backend/lib/transcripts/sessionId.js` → `sessionIdFromTranscript`. When a hook payload includes a transcript path,
+the session is derived from that file, so the two sides can't disagree.
+
+| Agent | Hook payload field used | Transcript session id | How it's verified |
+|---|---|---|---|
+| Claude Code | `transcript_path` (falls back to `session_id`) | `<session>.jsonl` file name | Live run; both equal the Claude session UUID |
+| Cursor | `transcript_path` (`conversation_id` is ignored when a path exists; Cursor's docs don't say it equals the transcript id) | `agent-transcripts/<id>/<id>.jsonl` | Same function on both sides |
+| Codex | `transcript_path`, else `session_id` (the thread id) | `session_meta.payload.id`, else the UUID at the end of `rollout-<ts>-<uuid>.jsonl` | Real rollout files: `payload.id` = filename UUID |
+| Antigravity | `conversationId` | `brain/<uuid>/` directory | On disk, `conversations/<uuid>.pb` and `brain/<uuid>` share ids |
+| Copilot | `sessionId` | chat session `sessionId`, else `chatSessions/<id>` file name | Documented field; not yet checked live |
+
+`backend/lib/falkor/sessionjoin.test.js` parses a real-format transcript for each agent with the actual parser, builds the lock
+id from that agent's documented hook payload, and asserts the two session keys are equal.
+
 ## Agent tools (MCP)
 
 | Tool | What it does |

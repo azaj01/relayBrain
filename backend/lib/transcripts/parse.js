@@ -10,6 +10,7 @@ const {
 } = require("./util");
 
 const { EDIT_TOOL_SETS } = require("../editMatchers");
+const { sessionIdFromTranscript } = require("./sessionId");
 const CURSOR_EDIT_TOOLS = EDIT_TOOL_SETS.cursor;
 const CLAUDE_EDIT_TOOLS = EDIT_TOOL_SETS.claude;
 const CODEX_EDIT_TOOLS = EDIT_TOOL_SETS.codex;
@@ -189,7 +190,9 @@ function parseClaude(file) {
 
 function parseCodex(file) {
   const rows = readJsonl(file);
-  const sessionId = sessionIdFromFile(file);
+  // Hooks send the thread id as session_id; the rollout filename only ends with it.
+  const meta = rows.find((r) => r?.type === "session_meta")?.payload?.id;
+  const sessionId = typeof meta === "string" && meta ? meta : sessionIdFromTranscript("Codex", file);
   const events = [];
   rows.forEach((step, index) => {
     const ts = toTs(step.timestamp, fileMtime(file) + index * 1000);
@@ -326,7 +329,7 @@ function antigravitySummary(content) {
 
 function parseAntigravity(file) {
   const rows = readJsonl(file);
-  const sessionId = path.basename(path.dirname(path.dirname(path.dirname(file)))) || sessionIdFromFile(file);
+  const sessionId = sessionIdFromTranscript("Antigravity", file) || sessionIdFromFile(file);
   const events = [];
   // CODE_ACTION carries the diff but sometimes not a resolvable path; the
   // PLANNER_RESPONSE that requested it always carries `TargetFile`. Remembering

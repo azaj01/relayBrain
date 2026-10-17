@@ -265,7 +265,15 @@ function currentLogin() {
 }
 
 function lockAgentIdFor(mode, payload) {
+  // Derive the session from the transcript the payload points at, exactly as the
+  // transcript parser does, so a lock and its transcript always name one session.
+  // Cursor's conversation_id and Codex's rollout filename are not documented to match.
+  const transcript = payload.transcript_path || payload.transcriptPath;
+  const fromTranscript = transcript
+    ? require("../backend/lib/transcripts/sessionId").sessionIdFromTranscript(modeLabel(mode), transcript)
+    : null;
   const session =
+    fromTranscript ||
     payload.session_id ||
     payload.conversation_id ||
     // Antigravity and Copilot both name this in camelCase. Missing them meant
