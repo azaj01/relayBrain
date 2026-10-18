@@ -1,6 +1,6 @@
 {
   "name": "relaybrain",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Coordination layer for parallel AI coding agents — file locks, patch sync, Mission Control, and a FalkorDB memory graph that tells every agent who is doing what, and why.",
   "keywords": [
     "ai-agents",
