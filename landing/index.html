@@ -352,15 +352,16 @@ RETURN s.intent, c.attempts</pre>
 
       <div class="file-tree" aria-label="Install ./relay" style="margin-bottom: 50px;">
         <div class="terminal-bar"><span></span><span>host</span></div>
-        <pre><span>$ npm install &amp;&amp; npm link</span>   <i># the relay CLI, Node 20+</i>
+        <pre><span>$ npm install -g relaybrain</span>   <i># the relay CLI, Node 20+</i>
 <span>$ relay login</span>              <i># GitHub identity, via the gh CLI</i>
 <span>$ relay clone &lt;repo-url&gt;</span>   <i># clone + register + install agent hooks</i>
 <span>$ relay graph up</span>           <i># optional: FalkorDB memory graph (Docker)</i>
 <span>$ relay graph enable</span>       <i># switch relay onto the graph</i>
-<span>$ relay serve</span>              <i># API :3001 · Mission Control :3002</i></pre>
+<span>$ relay serve</span>              <i># API + Mission Control on :3001</i></pre>
         <div class="terminal-command"><span>$</span> <a href="https://github.com/prakrititz/relayBrain" target="_blank"
             rel="noopener" style="color: inherit; text-decoration: none;">github.com/prakrititz/relayBrain
-            ↗</a><strong>MIT · open source</strong></div>
+            ↗</a><strong>MIT · <a href="https://www.npmjs.com/package/relaybrain" target="_blank"
+              rel="noopener" style="color: inherit;">npm: relaybrain</a></strong></div>
       </div>
 
       <p class="protocol-intro" style="margin-left: 0; margin-top: 0; margin-bottom: 50px;">Then open Mission Control →
@@ -452,7 +453,7 @@ RETURN s.intent, c.attempts</pre>
   <footer class="footer shell">
     <a class="wordmark" href="#top"><img src="logo.png" alt="" class="inline-logo" /> ./relay</a>
     <p>The coordination layer for AI agents.</p>
-    <p><a href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Source on GitHub ↗</a> · © 2026 ./relay</p>
+    <p><a href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Source on GitHub ↗</a> · <a href="https://www.npmjs.com/package/relaybrain" target="_blank" rel="noopener">npm ↗</a> · © 2026 ./relay</p>
   </footer>
 
   <script src="brain_animation.js"></script>
