@@ -131,7 +131,7 @@ Now start agents as usual. Hooks claim and release locks automatically — nobod
 | attach an existing repo | `relay add /path/to/repo` |
 | fresh clone | `relay clone <url> [dir]` |
 
-Requires **Node.js 18+** (20+ recommended). No hosted backend, no login server. The memory graph needs FalkorDB (`relay graph up`, Docker); without it, relay runs on files alone.
+Requires **Node.js 20+** and **npm**. No hosted backend, no login server. The memory graph needs FalkorDB (`relay graph up`, Docker); without it, relay runs on files alone. See [**Dependencies**](#dependencies) below for install commands (`cloudflared`, `gh`, Docker, etc.).
 
 </details>
 
@@ -237,12 +237,52 @@ Languages parsed for the dependency graph: TypeScript/JavaScript, Python, Go, Ru
 
 | | |
 |---|---|
-| **Required** | Node.js 18+ (20+ recommended), npm |
-| **Bundled** | `express`, `cors`, `ws`, `@vscode/tree-sitter-wasm` · `next`, `react` (Mission Control) |
-| **Not needed** | MongoDB, Redis, Docker, a hosted backend, an account |
-| **Optional** | `gh` CLI for `relay login` · `cloudflared` / Tailscale Funnel / ngrok for cross-machine rooms · Docker or FalkorDB Cloud for the memory graph |
+| **Required** | **Node.js 20+** & `npm` |
+| **Bundled** | `express`, `cors`, `ws`, `@vscode/tree-sitter-wasm`, `falkordb` · `next`, `react` (Mission Control) |
+| **Not needed** | MongoDB, Redis, a hosted backend, an account |
+| **Optional** | `gh` CLI for `relay login` · `cloudflared` / Tailscale Funnel / custom URL for cross-machine rooms · Docker or FalkorDB Cloud for the memory graph |
 
 **Env vars:** `RELAY_PORT` (3001) · `RELAY_UI_PORT` (3002) · `RELAY_UI_ORIGIN` · `RELAY_TUNNEL` (`cloudflared`\|`tailscale`\|`ngrok`) · `RELAY_PUBLIC_URL` · `RELAY_PUBLIC_READONLY`
+
+### Installing dependencies
+
+#### 1. Node.js 20+ & npm *(Required)*
+
+- **Windows (`winget`):** `winget install OpenJS.NodeJS.LTS`
+- **macOS (`brew`):** `brew install node@20`
+- **Linux (Ubuntu/Debian):** `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`
+
+#### 2. Docker Desktop / Docker Engine *(Optional — local FalkorDB memory graph)*
+
+Needed only if you run the local memory graph via `relay graph up` (or use [FalkorDB Cloud](https://app.falkordb.cloud) with `relay graph enable --url ...` for zero local containers).
+
+- **Windows (`winget`):** `winget install Docker.DockerDesktop`
+- **macOS (`brew`):** `brew install --cask docker`
+- **Linux:** `curl -fsSL https://get.docker.com | sh`
+
+#### 3. GitHub CLI (`gh`) *(Optional — identity & room signaling)*
+
+Used by `relay login` to attach your GitHub identity when hosting or joining rooms. After installing, run `gh auth login`.
+
+- **Windows (`winget`):** `winget install GitHub.cli`
+- **macOS (`brew`):** `brew install gh`
+- **Linux (Ubuntu/Debian):** `sudo apt-get update && sudo apt-get install -y gh`
+
+#### 4. Tunnel Provider for Cross-Machine Rooms *(Optional — room host only)*
+
+Only the **room host** needs a tunnel when sharing a session across different networks. Pick any one:
+
+- **Cloudflare Quick Tunnels (`cloudflared`) — Recommended** *(zero signup, no account, no rate limits)*:
+  - **Windows (`winget`):** `winget install Cloudflare.cloudflared`
+  - **macOS (`brew`):** `brew install cloudflared`
+  - **Linux:** `curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared`
+- **Tailscale Funnel (`tailscale`):**
+  - **Windows (`winget`):** `winget install Tailscale.Tailscale`
+  - **macOS (`brew`):** `brew install --cask tailscale`
+  - **Linux:** `curl -fsSL https://tailscale.com/install.sh | sh`
+  - Expose port: `tailscale funnel 3001`
+- **Custom URL / Cloud VM:**
+  - Set `RELAY_PUBLIC_URL=https://your-domain` or paste your public URL directly in Mission Control → **Team → Share**.
 
 ## Documentation
 
