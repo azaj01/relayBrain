@@ -8,7 +8,7 @@ const cmd = process.argv[2] || "help";
 const rest = process.argv.slice(3);
 
 function help() {
-  console.log(`Relay — GitHub Desktop for AI agents
+  console.log(`Relay — Version control for AI agents
 
   relay login              Sign in with GitHub (uses gh CLI, or device flow if GITHUB_CLIENT_ID is set)
   relay logout             Clear the local session

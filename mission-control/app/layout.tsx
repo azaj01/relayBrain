@@ -4,7 +4,7 @@ import { RelayProvider } from "@/lib/RelayContext";
 
 export const metadata: Metadata = {
   title: "./relay",
-  description: "GitHub Desktop for AI agents",
+  description: "Version control for AI agents",
   icons: {
     icon: "/logo_transparent.png",
     shortcut: "/logo_transparent.png",

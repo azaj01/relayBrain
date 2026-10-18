@@ -2,7 +2,7 @@
 
 ![Relay](./logo.png)
 
-### GitHub Desktop for AI agents — powered by a FalkorDB Memory Graph.
+### Version control for AI agents — powered by a FalkorDB Memory Graph.
 
 *Git coordinates humans committing minutes apart. **Relay coordinates agents editing the same files right now** — file locks, dependency-aware locks, live patch sync, and one shared **FalkorDB knowledge & memory graph** across every agent and teammate.*
 
