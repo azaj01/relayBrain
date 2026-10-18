@@ -121,24 +121,122 @@ function claudeTranscriptCwd(file) {
   return null;
 }
 
-function discoverClaude(workspacePath) {
-  const root = path.join(HOME, ".claude", "projects");
-  const projectDir = path.join(root, claudeSlug(workspacePath));
-  if (!fs.existsSync(projectDir)) return [];
-  const target = normalizeCompare(workspacePath);
-  let files = [];
+function claudeJsonlFiles(dir) {
   try {
-    files = fs
-      .readdirSync(projectDir, { withFileTypes: true })
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .map((entry) => path.join(projectDir, entry.name));
+      .map((entry) => path.join(dir, entry.name));
   } catch {
     return [];
   }
-  return files.filter((file) => {
+}
+
+// Claude project dirs for every folder above the workspace. Opening VS Code (or
+// the CLI) one level up — a monorepo root, a hackathon folder holding the repo —
+// files the session under the parent's slug, so the repo's own slug dir never
+// sees it.
+function claudeAncestorDirs(workspacePath) {
+  const root = path.join(HOME, ".claude", "projects");
+  const dirs = [];
+  let dir = path.resolve(workspacePath);
+  for (let parent = path.dirname(dir); parent !== dir; dir = parent, parent = path.dirname(dir)) {
+    const candidate = path.join(root, claudeSlug(parent));
+    if (fs.existsSync(candidate)) dirs.push({ dir: candidate, cwd: normalizeCompare(parent) });
+  }
+  return dirs;
+}
+
+// Transcripts are append-only, so once a session has mentioned a file inside the
+// workspace it always will; only the bytes added since the last look need reading.
+const touchCache = new Map();
+
+// The workspace path as a transcript spells it: plain, JSON-escaped, raw
+// backslashes, or a file:// URL. Matched literally rather than through
+// pathsMentionedIn, whose regex stops at whitespace and so never sees a path
+// under a home folder like "C:\Users\Jane Doe". The trailing separator keeps
+// `.../relay` from matching `.../relay-old`.
+function workspaceSpellings(needle) {
+  const fwd = needle.toLowerCase();
+  const url = fwd.replace(/ /g, "%20");
+  return [
+    `${fwd}/`,
+    `${fwd.replace(/\//g, "\\")}\\`,
+    `${fwd.replace(/\//g, "\\\\")}\\\\`,
+    `${url}/`,
+    `${url.replace(/^([a-z]):/, "$1%3a")}/`,
+  ];
+}
+
+function transcriptTouches(file, needle) {
+  let size;
+  try {
+    size = fs.statSync(file).size;
+  } catch {
+    return false;
+  }
+  const key = `${file}\n${needle}`;
+  const prev = touchCache.get(key);
+  if (prev?.matched) return true;
+  if (prev && prev.size === size) return false;
+  const from = Math.max(0, (prev?.size || 0) - 1024);
+  const spellings = workspaceSpellings(needle);
+  let matched = false;
+  try {
+    const fd = fs.openSync(file, "r");
+    try {
+      const chunk = 4 * 1024 * 1024;
+      const buf = Buffer.alloc(chunk);
+      for (let pos = from; pos < size && !matched; pos += chunk - 1024) {
+        const n = fs.readSync(fd, buf, 0, chunk, pos);
+        if (n <= 0) break;
+        const text = buf.toString("utf8", 0, n).toLowerCase();
+        matched = spellings.some((s) => text.includes(s));
+        if (n < chunk) break;
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+  touchCache.set(key, { size, matched });
+  return matched;
+}
+
+const CLAUDE_ANCESTOR_MAX_FILES = 40;
+
+function discoverClaude(workspacePath) {
+  const root = path.join(HOME, ".claude", "projects");
+  const projectDir = path.join(root, claudeSlug(workspacePath));
+  const target = normalizeCompare(workspacePath);
+  const own = claudeJsonlFiles(projectDir).filter((file) => {
     const cwd = claudeTranscriptCwd(file);
     return !cwd || normalizeCompare(cwd) === target;
   });
+
+  // Sessions started in a parent folder count when they reach into this repo.
+  const needle = pathNeedle(workspacePath);
+  const inherited = [];
+  for (const { dir, cwd: dirCwd } of claudeAncestorDirs(workspacePath)) {
+    const recent = claudeJsonlFiles(dir)
+      .map((file) => {
+        try {
+          return { file, mtimeMs: fs.statSync(file).mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      .slice(0, CLAUDE_ANCESTOR_MAX_FILES);
+    for (const { file } of recent) {
+      const cwd = claudeTranscriptCwd(file);
+      if (cwd && normalizeCompare(cwd) !== dirCwd) continue;
+      if (transcriptTouches(file, needle)) inherited.push(file);
+    }
+  }
+  return [...own, ...inherited];
 }
 
 function discoverCodex(workspacePath) {
@@ -319,6 +417,7 @@ function transcriptWatchRoots(workspacePath) {
   if (cursorDir) roots.push(cursorDir);
   const claudeDir = path.join(HOME, ".claude", "projects", claudeSlug(workspacePath));
   if (fs.existsSync(claudeDir)) roots.push(claudeDir);
+  for (const { dir } of claudeAncestorDirs(workspacePath)) roots.push(dir);
   const codexDir = path.join(HOME, ".codex", "sessions");
   if (fs.existsSync(codexDir)) roots.push(codexDir);
   roots.push(...antigravityRoots());

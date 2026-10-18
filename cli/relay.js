@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const fs = require("fs");
 const path = require("path");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 
 const root = path.join(__dirname, "..");
 const cmd = process.argv[2] || "help";
@@ -16,9 +16,9 @@ function help() {
   relay clone <url> [dir]  git clone + register workspace + install agent hooks
   relay add <path>         Attach an existing local repo
   relay init [path]        Wire hooks, MCP, and relay-os instructions (default: cwd)
-  relay serve              Start API on 127.0.0.1:3001 and Mission Control on :3002
+  relay serve              Start the API and Mission Control on 127.0.0.1:3001 (prebuilt UI, fast start)
   relay serve --no-ui      Start API + coordinator only
-  relay serve --static     Serve the prebuilt Mission Control from the API port (default for npm installs)
+  relay serve --dev        Run Mission Control with next dev on :3002 (hot reload, slow first load)
   relay push               Send your dirty working-tree files to the shared room
   relay pull               Apply the host's current dirty files onto this clone
   relay status             Health check
@@ -65,18 +65,73 @@ async function waitForApi(url, ms = 30000) {
   return false;
 }
 
+function newestMtime(dir) {
+  let newest = 0;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) newest = Math.max(newest, newestMtime(full));
+    else newest = Math.max(newest, fs.statSync(full).mtimeMs);
+  }
+  return newest;
+}
+
+/** True when there is no prebuilt UI, or the UI source changed after it was built. */
+function staticUiStale() {
+  const ui = path.join(root, "mission-control");
+  const index = path.join(ui, "out", "index.html");
+  if (!fs.existsSync(index)) return true;
+  const builtAt = fs.statSync(index).mtimeMs;
+  const sources = ["app", "components", "lib", "styles", "public"].map((d) => newestMtime(path.join(ui, d)));
+  for (const f of ["next.config.js", "package.json"]) {
+    try {
+      sources.push(fs.statSync(path.join(ui, f)).mtimeMs);
+    } catch {
+      /* optional */
+    }
+  }
+  return Math.max(...sources) > builtAt;
+}
+
+/** Old bookmarks, docs and invite links point at :3002 — send them to the real UI. */
+function redirectOldUiPort(uiPort, uiOrigin) {
+  const http = require("http");
+  const server = http.createServer((req, res) => {
+    res.writeHead(302, { Location: `${uiOrigin}${req.url || "/"}` });
+    res.end();
+  });
+  server.on("error", () => {
+    /* port busy — nothing to redirect */
+  });
+  server.listen(Number(uiPort), "127.0.0.1");
+  server.unref();
+}
+
 async function serve(args) {
   const noUi = args.includes("--no-ui");
-  const forwarded = args.filter((a) => a !== "--no-ui" && a !== "--static");
+  const dev = args.includes("--dev");
+  const forwarded = args.filter((a) => !["--no-ui", "--static", "--dev"].includes(a));
   const uiPort = process.env.RELAY_UI_PORT || "3002";
   const port = apiPort(forwarded);
   const apiOrigin = `http://127.0.0.1:${port}`;
   const children = [];
-  // An npm install ships Mission Control prebuilt (mission-control/out) and no Next.js,
-  // so the API serves the UI itself; a source checkout runs `next dev` as before.
+  // Mission Control is served prebuilt (mission-control/out) from the API port:
+  // `next dev` compiles the whole UI on first page load, which is a long blank
+  // wait. An npm install ships the build; a source checkout rebuilds it only when
+  // the UI source is newer. `--dev` keeps hot reload for working on the UI.
   const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
+  if (!noUi && !dev && fs.existsSync(nextBin) && staticUiStale()) {
+    console.log("[relay] building Mission Control (once, after UI changes)…");
+    const built = spawnSync(process.execPath, [path.join(root, "scripts", "build-ui.js")], { stdio: "inherit", cwd: root });
+    if (built.status !== 0) console.error("[relay] UI build failed — falling back to `next dev`");
+  }
   const hasStaticUi = fs.existsSync(path.join(root, "mission-control", "out", "index.html"));
-  const staticUi = !noUi && hasStaticUi && (args.includes("--static") || !fs.existsSync(nextBin));
+  const staticUi = !noUi && !dev && hasStaticUi;
   const uiOrigin = staticUi ? `http://localhost:${port}` : `http://localhost:${uiPort}`;
 
   const api = spawn(process.execPath, [path.join(root, "backend", "server.js"), ...forwarded], {
@@ -106,6 +161,7 @@ async function serve(args) {
   });
 
   if (staticUi) {
+    redirectOldUiPort(uiPort, uiOrigin);
     if (await waitForApi(`${apiOrigin}/api/health`)) console.log(`[relay] Mission Control → ${uiOrigin}`);
   } else if (!noUi) {
     if (!fs.existsSync(nextBin)) {

@@ -188,9 +188,19 @@ agent turn ends.
 
 ### 7. Use it
 
-- **Mission Control** → **Memory Graph** tab (`http://localhost:3002/?tab=graph`)
+- **Mission Control** → **Memory Graph** tab (`http://localhost:3001/?tab=graph`)
 - **In any agent:** "call relay_session_brief for src/auth.ts", or `relay_graph_query` with `query: "file_story"`
 - **Room guests:** nothing to install. Their agents' graph queries go to the host's graph over the room tunnel.
+
+### A new PC: pick one
+
+| You are… | Do this | Needs Docker? |
+|---|---|---|
+| A teammate joining someone's room | `npm i -g relaybrain`, `relay serve`, paste the host's invite in **Team**. The Memory Graph tab and agent graph tools read the host's graph through the room | No |
+| The host, with Docker | `relay graph up`, `relay graph enable`, `relay serve` | Yes |
+| The host, without Docker | Create a free instance on [FalkorDB Cloud](https://app.falkordb.cloud), copy its host, port and password, then `relay graph enable falkor://default:PASSWORD@HOST:PORT` (`falkors://` if it is TLS-only) and `relay serve` | No |
+
+Only the host runs a graph. Your own chats always load from this machine's agent transcripts, graph or not.
 
 ### Environment variables (optional)
 
@@ -224,6 +234,8 @@ coordinating; history is re-sent when FalkorDB comes back, and non-replayable ev
 | `relay graph up` fails with a port in use | Something else (often a local Redis) holds 6379. Change the host port in `docker-compose.falkor.yml` (`"6380:6379"`) and `relay graph enable falkor://localhost:6380` |
 | `relay graph status`: *FalkorDB unreachable (retrying)* | The container stopped (`docker ps`). `relay graph up`. Relay reconnects by itself within ~30 s |
 | Memory Graph tab: *not enabled on this relay* | Click **Enable**, or `relay graph enable` |
+| Mission Control takes long to open | Use plain `relay serve`: it serves the prebuilt UI on `:3001` (`:3002` redirects there). Only `relay serve --dev` compiles the UI on first load |
+| Claude chats missing | Relay looks for Claude sessions opened in the repo or in any folder above it that edits the repo. Run an agent turn, then **Sync** in Mission Control |
 | Graph is empty | Ingest runs when an agent turn ends (Stop hook) or on `relay_sync`. For history from before, `relay graph rebuild`. Check `relay doctor` that hooks reach relay |
 | `relay graph status` shows **NEEDS REBUILD** | An update changed how history is stored: `relay graph rebuild` |
 | `RELAY_FALKOR_URL` seems ignored, or wins over `enable` | The env var beats the saved file. `relay graph status` shows which one is in use (`from env` / `from file`) |
