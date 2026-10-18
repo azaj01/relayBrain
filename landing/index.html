@@ -14,7 +14,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Space+Grotesk:wght@500;600;700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="brain_animation.css">
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 
 <body>
@@ -27,6 +27,8 @@
         <a href="how-it-works.html">How it works</a>
         <a href="#memory-graph">Memory graph</a>
         <a href="docs.html">Docs</a>
+        <a href="https://relaybrain.hashnode.dev/locks-say-no-the-graph-says-why-giving-ai-coding-agents-a-shared-memory-with-falkordb"
+          target="_blank" rel="noopener">Blog <span aria-hidden="true">↗</span></a>
         <a href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Source on GitHub <span
             aria-hidden="true">↗</span></a>
       </div>
@@ -36,9 +38,17 @@
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy">
+        <div class="install-strip" aria-label="Install relaybrain from npm">
+          <a class="npm-badge" href="https://www.npmjs.com/package/relaybrain" target="_blank" rel="noopener"
+            title="relaybrain on npm">npm <span data-npm-version>published</span></a>
+          <code class="install-cmd">npm install -g relaybrain</code>
+          <button class="copy-btn" type="button" data-copy="npm install -g relaybrain">Copy</button>
+          <a class="blog-pill" href="https://relaybrain.hashnode.dev/locks-say-no-the-graph-says-why-giving-ai-coding-agents-a-shared-memory-with-falkordb"
+            target="_blank" rel="noopener">Read the blog <span aria-hidden="true">↗</span></a>
+        </div>
         <p class="eyebrow"><span class="status-dot"></span> relayBrain · The coordination layer for AI agents · <a class="powered-by" href="https://www.falkordb.com" target="_blank" rel="noopener">Powered by <img src="https://avatars.githubusercontent.com/u/140048192?s=64&v=4" alt="" width="16" height="16"> FalkorDB</a></p>
         <h1>Twelve agents.<br><span>One repository. Zero collisions.</span></h1>
-        <p class="hero-subtitle">Claude Code, Cursor, Copilot, Codex, Antigravity — running in parallel, on four
+        <p class="hero-subtitle">Claude Code, Cursor, Copilot, Codex, Antigravity: running in parallel, on four
           machines, writing to the same files. ./relay locks, resolves, and syncs between them, and remembers why
           every change happened in a FalkorDB memory graph. GitHub Desktop for AI agents.</p>
         <div class="hero-actions">
@@ -506,7 +516,7 @@ RETURN s.intent, c.attempts</pre>
   </footer>
 
   <script src="brain_animation.js"></script>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 
 </html>

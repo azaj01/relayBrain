@@ -157,3 +157,25 @@ if (carousel && prevBtn && nextBtn) {
     })
     .catch(() => {});
 })();
+
+// Install strip: copy button, and the live published version from the npm registry.
+(function installStrip() {
+  document.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const text = btn.getAttribute("data-copy");
+      const done = () => {
+        btn.textContent = "Copied";
+        setTimeout(() => (btn.textContent = "Copy"), 1600);
+      };
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done, () => {});
+    });
+  });
+  const slot = document.querySelector("[data-npm-version]");
+  if (!slot || !window.fetch) return;
+  fetch("https://registry.npmjs.org/relaybrain/latest")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((pkg) => {
+      if (pkg?.version) slot.textContent = `v${pkg.version}`;
+    })
+    .catch(() => {});
+})();
