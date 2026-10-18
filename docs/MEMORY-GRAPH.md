@@ -24,19 +24,52 @@ In the graph, that question is a single traversal, and nothing ages out.
 
 ## What's in it
 
+```mermaid
+flowchart LR
+  Person(["Person"]) -->|RUNS| Agent(["Agent"])
+  Agent -->|RAN| Session(["Session"])
+  Session -->|HAS_TURN| Turn(["Turn"])
+  Session -->|MADE| Edit(["Edit"])
+  Edit -->|MODIFIED| File(["File"])
+  Agent -->|TOUCHED| File
+  Session -->|HELD| File
+  Edit -->|PROMPTED_BY| Turn
+  Edit -->|EXPLAINED_BY| Turn
+  Edit -->|SAME_CHANGE| Edit
+  Contention(["Contention"]) -->|ON| File
+  Contention -->|HELD_BY| Session
+  Contention -->|WANTED_BY| Session
+  Overlap(["Overlap"]) -->|ON| File
+  Overlap -->|BETWEEN| Edit
+  Decision(["Decision"]) -->|ABOUT| File
+  Decision -->|DURING| Session
+  Agent -->|DECIDED| Decision
+  Task(["Task"]) -->|ABOUT| File
+  Task -->|DURING| Session
+  File <-->|CO_EDITED| File
+  Agent <-->|OVERLAPS_WITH| Agent
 ```
+
+```text
 (Person)-[:RUNS]->(Agent)-[:RAN]->(Session)-[:HAS_TURN]->(Turn)
-                       │                 └─[:MADE]->(Edit)-[:MODIFIED]->(File)
-                       └─[:TOUCHED {count,lastAt}]──────────────────────▲
-(Edit)-[:PROMPTED_BY {via}]->(Turn {role:user})          inferred "why"
-(Edit)-[:EXPLAINED_BY]->(Turn {role:assistant})
-(Edit {source:patch})-[:SAME_CHANGE]->(Edit {source:transcript})
-(Session)-[:HELD {count}]->(File)                        aggregated lock claims
-(Contention)-[:ON]->(File), -[:HELD_BY]->(Session), -[:WANTED_BY]->(Session)
-(Overlap)-[:ON]->(File), -[:BETWEEN]->(Edit)×2           two agents, same file, within 5 min
-(Decision|Task)-[:ABOUT]->(File), -[:DURING]->(Session); (Agent)-[:DECIDED]->(Decision)
-(File)-[:CO_EDITED {weight}]->(File)                     projection → PageRank, label propagation
-(Agent)-[:OVERLAPS_WITH {weight}]->(Agent)               projection → PageRank
+                     │                │
+                     │                └──[:MADE]->(Edit)-[:MODIFIED]->(File)
+                     │                                                    ▲
+                     └───────────────────[:TOUCHED {count,lastAt}]────────┘
+
+Edge / Node                              Relationship                                         Meaning
+───────────────────────────────────────  ───────────────────────────────────────────────────  ──────────────────────────────────────────
+(Edit)                                   -[:PROMPTED_BY {via}]-> (Turn {role:'user'})         inferred "why" (skips "continue" / "yes")
+(Edit)                                   -[:EXPLAINED_BY]-> (Turn {role:'assistant'})         assistant explanation for the change
+(Edit {source:'patch'})                  -[:SAME_CHANGE]-> (Edit {source:'transcript'})       dedupes watcher patch & transcript edit
+(Session)                                -[:HELD {count}]-> (File)                            aggregated lock claims
+(Contention)                             -[:ON]->(File), -[:HELD_BY]->(Session),              who blocked whom + holder's active intent
+                                         -[:WANTED_BY]->(Session)
+(Overlap)                                -[:ON]->(File), -[:BETWEEN]->(Edit) × 2              two agents, same file, within 5 min
+(Decision | Task)                        -[:ABOUT]->(File), -[:DURING]->(Session)             decisions & tasks scoped to files/sessions
+(Agent)                                  -[:DECIDED]-> (Decision)                             agent attribution for decisions
+(File)                                   -[:CO_EDITED {weight, sessions}]-> (File)            projection → PageRank & label propagation
+(Agent)                                  -[:OVERLAPS_WITH {weight}]-> (Agent)                 projection → PageRank entanglement
 ```
 
 Where each part comes from:

@@ -40,10 +40,39 @@ This flat architecture broke down in four ways:
 
 We replaced flat scan-and-filter with **one FalkorDB graph per project** (`relay_<projectId>`), leveraging FalkorDB's multigraph isolation:
 
+```mermaid
+flowchart LR
+  Person(["Person"]) -->|RUNS| Agent(["Agent"])
+  Agent -->|RAN| Session(["Session"])
+  Session -->|HAS_TURN| Turn(["Turn"])
+  Session -->|MADE| Edit(["Edit"])
+  Edit -->|MODIFIED| File(["File"])
+  Agent -->|TOUCHED| File
+  Session -->|HELD| File
+  Edit -->|PROMPTED_BY| Turn
+  Edit -->|EXPLAINED_BY| Turn
+  Edit -->|SAME_CHANGE| Edit
+  Contention(["Contention"]) -->|ON| File
+  Contention -->|HELD_BY| Session
+  Contention -->|WANTED_BY| Session
+  Overlap(["Overlap"]) -->|ON| File
+  Overlap -->|BETWEEN| Edit
+  Decision(["Decision"]) -->|ABOUT| File
+  Decision -->|DURING| Session
+  Agent -->|DECIDED| Decision
+  Task(["Task"]) -->|ABOUT| File
+  Task -->|DURING| Session
+  File <-->|CO_EDITED| File
+  Agent <-->|OVERLAPS_WITH| Agent
+```
+
 ```text
 (Person)-[:RUNS]->(Agent)-[:RAN]->(Session)-[:HAS_TURN]->(Turn)
-                       │                 └─[:MADE]->(Edit)-[:MODIFIED]->(File)
-                       └─[:TOUCHED {count,lastAt}]──────────────────────▲
+                     │                │
+                     │                └──[:MADE]->(Edit)-[:MODIFIED]->(File)
+                     │                                                    ▲
+                     └───────────────────[:TOUCHED {count,lastAt}]────────┘
+
 (Edit)-[:PROMPTED_BY {via}]->(Turn {role:'user'})        inferred "why"
 (Edit)-[:EXPLAINED_BY]->(Turn {role:'assistant'})
 (Edit {source:'patch'})-[:SAME_CHANGE]->(Edit {source:'transcript'})

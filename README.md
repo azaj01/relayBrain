@@ -76,11 +76,26 @@ Locks stop two agents writing the same file at once. They don't tell the second 
 
 Now every agent turn, edit, lock claim, block, decision and teammate's activity flows into a **FalkorDB graph per project**:
 
+```mermaid
+flowchart LR
+  Person(["Person"]) -->|RUNS| Agent(["Agent"])
+  Agent -->|RAN| Session(["Session"])
+  Session -->|HAS_TURN| Turn(["Turn"])
+  Session -->|MADE| Edit(["Edit"])
+  Edit -->|MODIFIED| File(["File"])
+  Edit -->|PROMPTED_BY| Turn
+  Contention(["Contention"]) -->|ON| File
+  Contention -->|HELD_BY| Session
+  Contention -->|WANTED_BY| Session
+  Decision(["Decision"]) -->|ABOUT| File
+  File <-->|CO_EDITED| File
 ```
-Person → Agent → Session → Turn
-                    └─ MADE → Edit ─ MODIFIED → File ← ON ─ Contention ─ HELD_BY → Session (its intent)
-                               └─ PROMPTED_BY → the user request behind the change
-File ─ CO_EDITED → File   (PageRank = hotspots, label propagation = work areas)
+
+```text
+Person ──► Agent ──► Session ──► Turn
+                        └──► MADE ──► Edit ──► MODIFIED ──► File ◄── ON ── Contention ──► HELD_BY ──► Session (its intent)
+                                       └──► PROMPTED_BY ──► the user request behind the change
+File ──► CO_EDITED ──► File   (PageRank = hotspots, label propagation = work areas)
 ```
 
 - **Explainable by default.** Every edit links to the user request that caused it, inferred from transcripts. "continue" and "yes" are skipped in favor of the real request, so no agent has to report anything.
