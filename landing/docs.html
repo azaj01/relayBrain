@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="/.relay documentation — installation, quickstart, core concepts, the full CLI reference, agent hooks, MCP, Mission Control, configuration, and troubleshooting.">
+  <meta name="description" content="/.relay documentation — installation from npm, quickstart, the FalkorDB memory graph, core concepts, the full CLI reference including relay graph, agent hooks, MCP, Mission Control, configuration, and troubleshooting.">
   <title>Docs · /.relay</title>
   <link rel="icon" type="image/png" href="logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3">
   <link rel="stylesheet" href="docs.css">
 </head>
 <body>
@@ -48,6 +48,16 @@
       </div>
 
       <div class="docs-nav-group">
+        <p>Memory graph</p>
+        <a href="#memory-graph">What it is</a>
+        <a href="#memory-setup">Set it up</a>
+        <a href="#memory-new-pc">A new PC</a>
+        <a href="#memory-cli">relay graph commands</a>
+        <a href="#memory-queries">Queries &amp; agent tools</a>
+        <a href="#memory-troubleshooting">Graph troubleshooting</a>
+      </div>
+
+      <div class="docs-nav-group">
         <p>Core concepts</p>
         <a href="#concept-locking">File locking</a>
         <a href="#concept-depgraph">Dependency-graph locking</a>
@@ -77,11 +87,11 @@
 
       <!-- ---------------------------------------------- introduction -- -->
       <section id="introduction">
-        <p class="docs-kicker">Documentation · v0.1.0</p>
+        <p class="docs-kicker">Documentation · v0.2 · powered by FalkorDB</p>
         <h1>/.relay docs</h1>
-        <p class="lead">/.relay is the coordination layer for AI coding agents. Claude Code, Cursor, Copilot, Codex and Antigravity all write to the same files and none of them know the others exist. /.relay gives them one shared lock table, a dependency-aware view of the blast radius, and live patch sync across every machine on the team.</p>
+        <p class="lead">/.relay is the coordination layer for AI coding agents. Claude Code, Cursor, Copilot, Codex and Antigravity all write to the same files and none of them know the others exist. /.relay gives them one shared lock table, a dependency-aware view of the blast radius, live patch sync across every machine on the team, and a FalkorDB memory graph that tells every agent who is doing what, and why.</p>
 
-        <p>Everything on this page runs on your own hardware. There is no hosted backend, no database, and no account server — one person on the team runs <code>relay serve</code> and that machine <em>is</em> the server.</p>
+        <p>Everything on this page runs on your own hardware. There is no hosted backend and no account server — one person on the team runs <code>relay serve</code> and that machine <em>is</em> the server. The memory graph is optional: one FalkorDB container on the host (or a hosted FalkorDB), and teammates read it through the room.</p>
 
         <div class="code-block" data-lang="diff">
           <div class="code-block-head"><span class="dot"></span><span class="label">the shift</span><span class="lang">diff</span></div>
@@ -95,6 +105,8 @@
             <thead><tr><th>If you want to…</th><th>Go to</th></tr></thead>
             <tbody>
               <tr><td>Install the CLI and run it for the first time</td><td><a href="#installation">Installation</a> → <a href="#quickstart-host">Quickstart</a></td></tr>
+              <tr><td>Turn on the memory graph (FalkorDB)</td><td><a href="#memory-setup">Set it up</a> → <a href="#memory-cli">relay graph commands</a></td></tr>
+              <tr><td>Set relay up on a second or new PC</td><td><a href="#memory-new-pc">A new PC</a></td></tr>
               <tr><td>Understand what a lock actually guards</td><td><a href="#concept-locking">Core concepts</a></td></tr>
               <tr><td>Look up a command and its flags</td><td><a href="#cli">CLI reference</a></td></tr>
               <tr><td>Wire a specific agent into the claim/release cycle</td><td><a href="#hooks">Agent hooks</a></td></tr>
@@ -114,25 +126,33 @@
       <section id="installation">
         <p class="docs-kicker">Get started</p>
         <h2>Installation</h2>
-        <p>/.relay is a Node CLI plus a local API and a Next.js board. Everything ships in one repository, so installing means cloning it and linking the CLI onto your <code>PATH</code>.</p>
+        <p>/.relay is a Node CLI plus a local API and the Mission Control board. It is published on npm as <a href="https://www.npmjs.com/package/relaybrain" target="_blank" rel="noopener"><code>relaybrain</code></a>, with Mission Control prebuilt inside the package.</p>
 
         <h3 id="installation-requirements">Requirements</h3>
         <div class="docs-table-wrap">
           <table class="docs-table">
             <thead><tr><th>Status</th><th>What</th><th>Why</th></tr></thead>
             <tbody>
-              <tr><td>Required</td><td>Node.js 18+ (20+ recommended), npm</td><td>Runs the CLI, the API, and Mission Control</td></tr>
+              <tr><td>Required</td><td>Node.js 20+, npm</td><td>Runs the CLI, the API, and Mission Control</td></tr>
               <tr><td>Required</td><td>git</td><td><code>relay clone</code> shells out to it</td></tr>
               <tr><td>Optional</td><td><code>gh</code> CLI</td><td>Fastest path for <code>relay login</code></td></tr>
-              <tr><td>Optional</td><td>ngrok</td><td>Only needed for cross-machine rooms</td></tr>
-              <tr><td>Not needed</td><td>MongoDB, Redis, Docker, a hosted backend, an account</td><td>State lives in files on your disk</td></tr>
+              <tr><td>Optional</td><td>Docker (Desktop on Windows/macOS, engine on Linux)</td><td>Runs FalkorDB for the memory graph on the host. Skip it with a hosted FalkorDB, or as a room guest</td></tr>
+              <tr><td>Optional</td><td>A tunnel: Cloudflare (no account), ngrok, or Tailscale</td><td>Only needed for cross-machine rooms</td></tr>
+              <tr><td>Not needed</td><td>A hosted backend, an account, a database on guest machines</td><td>Coordination state lives in files on your disk</td></tr>
             </tbody>
           </table>
         </div>
 
         <h3 id="installation-install">Install the CLI</h3>
         <div class="code-block" data-lang="bash">
-          <div class="code-block-head"><span class="dot"></span><span class="label">terminal</span><span class="lang">bash</span></div>
+          <div class="code-block-head"><span class="dot"></span><span class="label">from npm (recommended)</span><span class="lang">bash</span></div>
+<pre><code>$ npm install -g relaybrain   # puts `relay` (and `relaybrain`) on your PATH</code></pre>
+        </div>
+
+        <p>Or from source, if you want to hack on relay itself:</p>
+
+        <div class="code-block" data-lang="bash">
+          <div class="code-block-head"><span class="dot"></span><span class="label">from source</span><span class="lang">bash</span></div>
 <pre><code>$ git clone https://github.com/prakrititz/relayBrain
 $ cd relayBrain
 $ npm install                # deps for the CLI, API and Mission Control
@@ -155,18 +175,21 @@ $ npm link                   # puts `relay` on your PATH</code></pre>
   relay whoami             Show the signed-in GitHub user
   relay clone &lt;url&gt; [dir]  git clone + register workspace + install agent hooks
   relay add &lt;path&gt;         Attach an existing local repo
-  relay serve              Start API on 127.0.0.1:3001 and Mission Control on :3002
+  relay init [path]        Wire hooks, MCP, and relay-os instructions (default: cwd)
+  relay serve              Start the API and Mission Control on 127.0.0.1:3001 (prebuilt UI, fast start)
   relay serve --no-ui      Start API + coordinator only
+  relay serve --dev        Run Mission Control with next dev on :3002 (hot reload, slow first load)
   relay push               Send your dirty working-tree files to the shared room
   relay pull               Apply the host's current dirty files onto this clone
   relay status             Health check
   relay mcp-url            Print the MCP config for this room's shared context endpoint
-  relay doctor             Why the Coordinator board is empty</code></pre>
+  relay doctor             Why the Coordinator board is empty (run it on the machine that sees nothing)
+  relay graph &lt;cmd&gt;        Memory graph (FalkorDB): up | enable [url] | disable | status | stats | rebuild [id|all]</code></pre>
         </div>
 
         <div class="callout callout-warn">
           <span class="callout-mark">Heads up</span>
-          <p><code>npm link</code> writes a global symlink. If your Node install lives under a system path you may need elevated permissions, or an nvm/fnm-managed Node — which is the friendlier option.</p>
+          <p><code>npm install -g</code> and <code>npm link</code> write to your global npm folder. If your Node install lives under a system path you may need elevated permissions, or an nvm/fnm-managed Node — which is the friendlier option. Install globally rather than with <code>npx</code>: agent hooks point at the installed files, so they need a stable path.</p>
         </div>
       </section>
 
@@ -174,7 +197,7 @@ $ npm link                   # puts `relay` on your PATH</code></pre>
       <section id="quickstart-host">
         <p class="docs-kicker">Get started</p>
         <h2>Quickstart · Host</h2>
-        <p>The host is the machine that owns the lock table. Exactly one person on the team is the host; everyone else is a guest. Four commands and you are live.</p>
+        <p>The host is the machine that owns the lock table — and, with the memory graph on, the room's graph. Exactly one person on the team is the host; everyone else is a guest. A handful of commands and you are live.</p>
 
         <div class="step-track">
           <div class="step-item">
@@ -199,17 +222,28 @@ $ npm link                   # puts `relay` on your PATH</code></pre>
           </div>
 
           <div class="step-item">
+            <h3>Turn on the memory graph (optional)</h3>
+            <p>Start Docker Desktop first, then:</p>
+            <div class="code-block" data-lang="bash">
+<pre><code>$ relay graph up             # FalkorDB in Docker on localhost:6379
+$ relay graph enable         # save the URL and switch relay onto the graph</code></pre>
+            </div>
+            <p>No Docker? Use a hosted FalkorDB instead — see <a href="#memory-setup">Set it up</a>. Without a graph, everything else on this page still works.</p>
+          </div>
+
+          <div class="step-item">
             <h3>Start the relay</h3>
             <div class="code-block" data-lang="bash">
-<pre><code>$ relay serve                # API → 127.0.0.1:3001 · Mission Control → :3002
-$ relay serve --no-ui        # API + coordinator only, no board</code></pre>
+<pre><code>$ relay serve                # API + Mission Control → http://localhost:3001
+$ relay serve --no-ui        # API + coordinator only, no board
+$ relay serve --dev          # Mission Control with hot reload on :3002</code></pre>
             </div>
-            <p>Mission Control is a Next.js dev server; the CLI waits for <code>/api/health</code> to answer before booting it, and shuts both down together on <kbd>Ctrl-C</kbd>.</p>
+            <p>Mission Control is served prebuilt from the API port, so it opens in well under a second. In a source checkout it is rebuilt once, only after the UI code changes. Old <code>:3002</code> links redirect to <code>:3001</code>. Everything shuts down together on <kbd>Ctrl-C</kbd>.</p>
           </div>
 
           <div class="step-item">
             <h3>Mint the invite link</h3>
-            <p>Open <a href="http://localhost:3002" target="_blank" rel="noopener">localhost:3002</a> → <strong>Team → Share</strong>. /.relay opens an ngrok tunnel to your machine and hands you a link. That link, plus the member token baked into it, is the whole room.</p>
+            <p>Open <a href="http://localhost:3001" target="_blank" rel="noopener">localhost:3001</a> → <strong>Team → Share</strong>. Pick a tunnel — Cloudflare Quick Tunnel (no account), ngrok, Tailscale Funnel, or a custom URL — and /.relay hands you a link. That link, plus the member token baked into it, is the whole room.</p>
           </div>
         </div>
 
@@ -227,7 +261,8 @@ $ relay serve --no-ui        # API + coordinator only, no board</code></pre>
 
         <div class="code-block" data-lang="bash">
           <div class="code-block-head"><span class="dot"></span><span class="label">teammate</span><span class="lang">bash</span></div>
-<pre><code>$ relay login                     # their own GitHub identity
+<pre><code>$ npm install -g relaybrain        # the relay CLI
+$ relay login                     # their own GitHub identity
 $ relay clone &lt;same-repo-url&gt;     # their own clone
 $ relay serve                     # their own local relay
 # then: Mission Control → Team → Join, paste the host's invite link
@@ -235,6 +270,8 @@ $ relay pull                      # take the host's current working state</code>
         </div>
 
         <p>From that point on, the two machines see one lock table. A claim on the guest's machine is arbitrated against the host over the tunnel, and the board mirrors the host's locks back down.</p>
+
+        <p><strong>Guests don't need FalkorDB or Docker.</strong> Their Memory Graph tab and their agents' graph tools are answered by the host's graph through the room.</p>
 
         <div class="docs-table-wrap">
           <table class="docs-table">
@@ -275,6 +312,306 @@ $ relay pull                      # take the host's current working state</code>
         <div class="code-block" data-lang="bash">
 <pre><code>$ relay doctor</code></pre>
         </div>
+      </section>
+
+      <!-- ---------------------------------------------- memory graph -- -->
+      <section id="memory-graph">
+        <p class="docs-kicker">Memory graph</p>
+        <h2>The memory graph</h2>
+        <p>A lock stops two agents writing one file. It doesn't tell the blocked agent <em>what the other one is doing</em>, what was decided, or which prompt made the code look this way. With the memory graph on, /.relay writes every agent session, prompt, edit, block and decision — across every agent and every teammate — into one <a href="https://www.falkordb.com" target="_blank" rel="noopener">FalkorDB</a> graph, and hands it back to agents before and during their work.</p>
+
+        <div class="docs-table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>What you get</th><th>How</th></tr></thead>
+            <tbody>
+              <tr><td><strong>Context at the conflict</strong></td><td>A denied lock quotes what the holder is working on, so the blocked agent can pick other work instead of retrying blindly</td></tr>
+              <tr><td><strong>Context before acting</strong></td><td><code>relay_session_brief</code> briefs any agent on the files it is about to touch: who is in them now, past blocks, decisions, recent prompts, who to ask</td></tr>
+              <tr><td><strong>Every change explained</strong></td><td>Each edit is linked to the user request behind it, inferred from the transcript — no agent has to report anything</td></tr>
+              <tr><td><strong>Graph algorithms as tools</strong></td><td>PageRank over co-edited files finds the hotspots; every answer ships the Cypher that produced it</td></tr>
+              <tr><td><strong>One brain per room</strong></td><td>The host's graph answers for every teammate; guests need no database</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="memory-graph-deny">Context at the moment of conflict</h3>
+        <div class="code-block" data-lang="output">
+          <div class="code-block-head"><span class="dot"></span><span class="label">pre-tool hook · denied</span><span class="lang">console</span></div>
+<pre><code>File `src/auth.ts` is locked by Claude Code:DESK:52b2…. Pick a different task.
+They're working on: "switch the login flow to JWT tokens" (2 min ago).</code></pre>
+        </div>
+        <p>The holder's intent comes from an in-process cache filled on ingest (and refilled from the graph after a restart), so the lock path never waits on the database. If FalkorDB is down, locks keep working exactly as before.</p>
+
+        <h3 id="memory-graph-model">What's in the graph</h3>
+        <div class="code-block" data-lang="text">
+          <div class="code-block-head"><span class="dot"></span><span class="label">graph model</span><span class="lang">cypher</span></div>
+<pre><code>(Person)-[:RUNS]->(Agent)-[:RAN]->(Session)-[:HAS_TURN]->(Turn)
+                                    └─[:MADE]->(Edit)-[:MODIFIED]->(File)
+(Edit)-[:PROMPTED_BY {via}]->(Turn {role:user})        the inferred "why"
+(Edit)-[:EXPLAINED_BY]->(Turn {role:assistant})
+(Session)-[:HELD {count}]->(File)                      lock claims
+(Contention)-[:ON]->(File), -[:HELD_BY]->(Session), -[:WANTED_BY]->(Session)
+(Overlap)-[:ON]->(File), -[:BETWEEN]->(Edit)×2         two agents, same file, minutes apart
+(Decision|Task)-[:ABOUT]->(File), -[:DURING]->(Session)
+(File)-[:CO_EDITED {weight}]->(File)                   → PageRank, communities</code></pre>
+        </div>
+
+        <div class="docs-table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>Source</th><th>Becomes</th></tr></thead>
+            <tbody>
+              <tr><td>Agent transcripts (Claude Code, Cursor, Codex, Copilot, Antigravity)</td><td>Person, Agent, Session, Turn, Edit, and the prompt links</td></tr>
+              <tr><td>Every lock claim and block</td><td><code>HELD</code> counts and a <code>Contention</code> per block</td></tr>
+              <tr><td>Room teammates' snapshots</td><td>Their sessions and edits, in the host's graph</td></tr>
+              <tr><td><code>relay_report_decision</code> / <code>relay_update_task</code></td><td>Decision and Task nodes tied to files and sessions</td></tr>
+              <tr><td>Analytics job (debounced)</td><td><code>Overlap</code>, <code>CO_EDITED</code>, file rank and community</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-note">
+          <span class="callout-mark">How the "why" works</span>
+          <p>Every edit is linked to the last meaningful user request in the same session. Filler like "continue", "yes" or "hi" is skipped and kept on the edge as <code>via</code>. On real multi-agent history, 100% of transcript edits get a prompt link.</p>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------- memory setup -- -->
+      <section id="memory-setup">
+        <p class="docs-kicker">Memory graph</p>
+        <h2>Set it up</h2>
+        <p>Only the <strong>host</strong> runs a graph. The same commands work on Windows, macOS and Linux, with no environment variables.</p>
+
+        <div class="step-track">
+          <div class="step-item">
+            <h3>Start FalkorDB</h3>
+            <p>With Docker Desktop running:</p>
+            <div class="code-block" data-lang="bash">
+<pre><code>$ relay graph up</code></pre>
+            </div>
+            <div class="code-block" data-lang="output">
+<pre><code>FalkorDB is up on falkor://127.0.0.1:6379 (browser UI: http://localhost:3010).
+Next: relay graph enable</code></pre>
+            </div>
+            <p>This runs the <code>falkordb/falkordb</code> container: the database on <code>6379</code>, FalkorDB's own browser on <a href="http://localhost:3010" target="_blank" rel="noopener">localhost:3010</a>, and data in a named Docker volume that survives restarts.</p>
+          </div>
+
+          <div class="step-item">
+            <h3>Turn the graph on</h3>
+            <div class="code-block" data-lang="bash">
+<pre><code>$ relay graph enable                                      # local Docker
+$ relay graph enable falkor://default:PASSWORD@HOST:PORT  # hosted FalkorDB
+$ relay graph enable falkors://default:PASSWORD@HOST:PORT # hosted, TLS</code></pre>
+            </div>
+            <div class="code-block" data-lang="output">
+<pre><code>Connected to falkor://127.0.0.1:6379 (2 graph(s)).
+relay serve: memory graph is on.
+Saved to ~/.relay/falkor.json.</code></pre>
+            </div>
+            <p><code>enable</code> checks that the database answers, saves the URL to <code>~/.relay/falkor.json</code> (readable only by you), and switches a running <code>relay serve</code> on immediately. You only do this once per machine. You can also click <strong>Enable</strong> in Mission Control's <strong>Memory Graph</strong> tab.</p>
+          </div>
+
+          <div class="step-item">
+            <h3>Refresh agent configs (existing workspaces only)</h3>
+            <div class="code-block" data-lang="bash">
+<pre><code>$ relay init          # in each repo you set up before the graph, then restart your agents</code></pre>
+            </div>
+            <p>This teaches each agent's MCP entry its own name and the new tools. Repos added with <code>relay clone</code> / <code>relay add</code> after this release are already wired.</p>
+          </div>
+
+          <div class="step-item">
+            <h3>Start relay and check it</h3>
+            <div class="code-block" data-lang="bash">
+<pre><code>$ relay serve
+$ relay graph status</code></pre>
+            </div>
+            <div class="code-block" data-lang="output">
+<pre><code>config: falkor://127.0.0.1:6379 (from file)
+file:   ~/.relay/falkor.json
+relay:  graph running, connected
+        proj_45dbc0415beb: last ingest 18/10/2026, 3:44:08 pm
+db:     reachable, 3 graph(s)</code></pre>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <h3>Bring in history you already have (optional)</h3>
+            <div class="code-block" data-lang="bash">
+<pre><code>$ relay graph rebuild          # every project
+$ relay graph rebuild &lt;id&gt;     # one project (ids: curl http://127.0.0.1:3001/api/projects)</code></pre>
+            </div>
+            <p>New activity is ingested automatically whenever an agent turn ends. Want something to look at right away? <code>relay graph seed proj_demo</code> fills a realistic five-agent demo graph of its own.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- -------------------------------------------- memory: new PC -- -->
+      <section id="memory-new-pc">
+        <p class="docs-kicker">Memory graph</p>
+        <h2>A new PC</h2>
+        <p>Pick the row that matches what this machine will be. Your own agents' chats always load from this machine's transcripts, graph or not.</p>
+
+        <div class="docs-table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>This machine is…</th><th>Do this</th><th>Docker?</th></tr></thead>
+            <tbody>
+              <tr><td>A teammate joining a room</td><td><code>npm i -g relaybrain</code> → <code>relay serve</code> → <strong>Team → Join</strong> with the host's invite. The graph is the host's, read over the room</td><td>No</td></tr>
+              <tr><td>The host, with Docker</td><td><code>relay graph up</code> → <code>relay graph enable</code> → <code>relay serve</code></td><td>Yes</td></tr>
+              <tr><td>The host, without Docker</td><td>Create a free instance on <a href="https://app.falkordb.cloud" target="_blank" rel="noopener">FalkorDB Cloud</a>, copy its host, port and password, then <code>relay graph enable falkor://default:PASSWORD@HOST:PORT</code> → <code>relay serve</code></td><td>No</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="code-block" data-lang="bash">
+          <div class="code-block-head"><span class="dot"></span><span class="label">new host, from zero</span><span class="lang">bash</span></div>
+<pre><code>$ npm install -g relaybrain
+$ relay login
+$ relay clone &lt;repo-url&gt;
+$ relay graph up && relay graph enable    # or: relay graph enable falkor://…cloud URL…
+$ relay serve                             # → http://localhost:3001</code></pre>
+        </div>
+
+        <div class="callout callout-tip">
+          <span class="callout-mark">Tip</span>
+          <p>Opened your editor on a folder <em>above</em> the repo (a monorepo root, a hackathon folder)? That's fine: /.relay also picks up Claude sessions started in parent folders, as long as they touch files inside the repo.</p>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------- memory: CLI -- -->
+      <section id="memory-cli">
+        <p class="docs-kicker">Memory graph</p>
+        <h2>relay graph commands</h2>
+        <p>Every subcommand accepts <code>--help</code>.</p>
+
+        <details class="cmd-entry" open>
+          <summary><code class="cmd-name">relay graph up</code><span class="cmd-desc">Start FalkorDB in Docker</span></summary>
+          <div class="cmd-body">
+            <p>Starts the container from <code>docker-compose.falkor.yml</code>. Fails with a clear message if Docker isn't running.</p>
+            <div class="code-block" data-lang="bash"><pre><code>$ relay graph up</code></pre></div>
+          </div>
+        </details>
+
+        <details class="cmd-entry">
+          <summary><code class="cmd-name">relay graph enable [url]</code><span class="cmd-desc">Save the URL and switch relay on</span></summary>
+          <div class="cmd-body">
+            <p>Default URL is <code>falkor://localhost:6379</code>. Accepts <code>falkor://</code>, <code>falkors://</code> (TLS), <code>redis://</code> and <code>rediss://</code>, with optional <code>user:password@</code>.</p>
+            <div class="code-block" data-lang="bash"><pre><code>$ relay graph enable
+$ relay graph enable falkor://default:s3cret@r-6jissuruar.instance-xyz.falkordb.cloud:6379</code></pre></div>
+          </div>
+        </details>
+
+        <details class="cmd-entry">
+          <summary><code class="cmd-name">relay graph status</code><span class="cmd-desc">Config, connection, ingest state</span></summary>
+          <div class="cmd-body">
+            <p>Shows where the URL came from (<code>from file</code> or <code>from env</code>), whether relay is connected, when each project was last ingested, and whether the database is reachable. Says <strong>NEEDS REBUILD</strong> if an update changed how history is stored.</p>
+            <div class="code-block" data-lang="bash"><pre><code>$ relay graph status</code></pre></div>
+          </div>
+        </details>
+
+        <details class="cmd-entry">
+          <summary><code class="cmd-name">relay graph stats [id|all]</code><span class="cmd-desc">Node and edge counts per project</span></summary>
+          <div class="cmd-body">
+            <div class="code-block" data-lang="bash"><pre><code>$ relay graph stats</code></pre></div>
+            <div class="code-block" data-lang="output"><pre><code>relayBrain (proj_relay) -> graph relay_proj_relay
+  nodes:      Edit:317  Turn:271  File:77  Agent:1  Person:1  Meta:1  Session:1
+  edges:      PROMPTED_BY:317  BY:317  EXPLAINED_BY:317  MODIFIED:317  MADE:317  HAS_TURN:271  TOUCHED:77
+  turns:      271/271 with text (2026-10-16 .. 2026-10-18)
+  schema:     v1 (ingest v6), migrations: 001_meta_versions_v6</code></pre></div>
+          </div>
+        </details>
+
+        <details class="cmd-entry">
+          <summary><code class="cmd-name">relay graph rebuild [id|all]</code><span class="cmd-desc">Rebuild from relay history</span></summary>
+          <div class="cmd-body">
+            <p>Re-projects a project's history into its graph. Safe to run any time; writes are idempotent.</p>
+            <div class="code-block" data-lang="bash"><pre><code>$ relay graph rebuild
+$ relay graph rebuild proj_45dbc0415beb</code></pre></div>
+          </div>
+        </details>
+
+        <details class="cmd-entry">
+          <summary><code class="cmd-name">relay graph seed [id]</code><span class="cmd-desc">Seed a 5-agent demo graph</span></summary>
+          <div class="cmd-body">
+            <p>Fills a realistic coordination graph — five agents, overlaps, blocks, decisions — for demos and for exploring the Memory Graph tab.</p>
+            <div class="code-block" data-lang="bash"><pre><code>$ relay graph seed proj_demo     # its own graph, apart from your real projects</code></pre></div>
+            <p>Give it an id. Without one it seeds your first registered project, mixing demo data into that project's real graph.</p>
+          </div>
+        </details>
+
+        <details class="cmd-entry">
+          <summary><code class="cmd-name">relay graph disable</code><span class="cmd-desc">Turn the graph off</span></summary>
+          <div class="cmd-body">
+            <p>Takes effect on the next <code>relay serve</code>. Your data stays in FalkorDB; <code>enable</code> picks it back up.</p>
+            <div class="code-block" data-lang="bash"><pre><code>$ relay graph disable</code></pre></div>
+          </div>
+        </details>
+      </section>
+
+      <!-- ------------------------------------------- memory: queries -- -->
+      <section id="memory-queries">
+        <p class="docs-kicker">Memory graph</p>
+        <h2>Queries &amp; agent tools</h2>
+        <p>Agents reach the graph through two MCP tools. Both are read-only and work for room guests too.</p>
+
+        <div class="docs-table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr><td><code>relay_session_brief</code></td><td>Call before editing unfamiliar files (<code>paths</code>). Returns who is editing them now and why, past blocks, decisions, the prompts behind recent changes, who to ask, and related files</td></tr>
+              <tr><td><code>relay_graph_query</code></td><td>Runs one of the named queries below and returns rows plus the exact Cypher used</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 id="memory-queries-named">Named queries</h3>
+        <div class="docs-table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>Query</th><th>Answers</th><th>Args</th></tr></thead>
+            <tbody>
+              <tr><td><code>file_story</code></td><td>Every change to a file, newest first, with the prompt that caused it</td><td><code>path</code></td></tr>
+              <tr><td><code>who_to_ask</code></td><td>People (and their agents) who know a file best, by recency and volume</td><td><code>path</code></td></tr>
+              <tr><td><code>contention_trace</code></td><td>Why agents were blocked: who held the file, what they were doing, who wanted it</td><td><code>path</code> (optional)</td></tr>
+              <tr><td><code>search_memory</code></td><td>Full-text search across every agent conversation</td><td><code>q</code></td></tr>
+              <tr><td><code>agent_activity</code></td><td>What an agent or person has been working on, session by session</td><td><code>agent</code> / <code>person</code></td></tr>
+              <tr><td><code>hotspots</code></td><td>Files where coordination matters most: PageRank over co-edits, plus overlaps and blocks</td><td>—</td></tr>
+              <tr><td><code>decision_trace</code></td><td>Decisions about a file (or all), who made them and in which session</td><td><code>path</code> (optional)</td></tr>
+              <tr><td><code>overlaps</code></td><td>Places where two different agents changed the same file within minutes</td><td>—</td></tr>
+              <tr><td><code>session_brief</code></td><td>The brief behind <code>relay_session_brief</code></td><td><code>paths</code></td></tr>
+              <tr><td><code>overview</code></td><td>Counts by node label and relationship type</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>The same queries are on the HTTP API, so you can script them:</p>
+        <div class="code-block" data-lang="bash">
+          <div class="code-block-head"><span class="dot"></span><span class="label">scripting the graph</span><span class="lang">bash</span></div>
+<pre><code>$ curl -s http://127.0.0.1:3001/api/graph/queries
+$ curl -s "http://127.0.0.1:3001/api/graph/query/file_story?path=src/auth.ts"
+$ curl -s "http://127.0.0.1:3001/api/graph/query/search_memory?q=jwt"</code></pre>
+        </div>
+
+        <p>Or ask in plain words inside any agent: <em>"call relay_session_brief for src/auth.ts"</em>, or <em>"use relay_graph_query hotspots"</em>. In Mission Control, the <strong>Memory Graph</strong> tab lets you click a file to see its agents, sessions, prompts, blocks and decisions, open the Cypher behind any panel, and search every conversation.</p>
+      </section>
+
+      <!-- ----------------------------------- memory: troubleshooting -- -->
+      <section id="memory-troubleshooting">
+        <p class="docs-kicker">Memory graph</p>
+        <h2>Graph troubleshooting</h2>
+        <div class="docs-table-wrap">
+          <table class="docs-table">
+            <thead><tr><th>Symptom</th><th>Cause and fix</th></tr></thead>
+            <tbody>
+              <tr><td><code>relay graph up</code>: <em>Docker is not running</em> (Windows: <code>failed to connect to the docker API at npipe:…</code>)</td><td>Start Docker Desktop, wait until it says running, run <code>relay graph up</code> again — or use FalkorDB Cloud</td></tr>
+              <tr><td>Port 6379 already in use</td><td>Often a local Redis. Change the host port in <code>docker-compose.falkor.yml</code> to <code>"6380:6379"</code>, then <code>relay graph enable falkor://localhost:6380</code></td></tr>
+              <tr><td><em>FalkorDB unreachable (retrying)</em></td><td>The container stopped (<code>docker ps</code>). <code>relay graph up</code>; relay reconnects by itself within ~30 s</td></tr>
+              <tr><td>Memory Graph tab: <em>not enabled on this relay</em></td><td>Click <strong>Enable</strong>, or <code>relay graph enable</code></td></tr>
+              <tr><td>Guest: <em>room host unreachable</em></td><td>The host's tunnel is down or relay isn't running there. The host re-shares from <strong>Team</strong></td></tr>
+              <tr><td>Graph is empty</td><td>Ingest runs when an agent turn ends. For older history, <code>relay graph rebuild</code>. To just look around, <code>relay graph seed proj_demo</code></td></tr>
+              <tr><td>Claude chats missing</td><td>Run one agent turn, then <strong>Sync</strong> in Mission Control. Sessions opened in the repo or any folder above it that touch the repo are picked up</td></tr>
+              <tr><td><code>relay graph status</code> shows <strong>NEEDS REBUILD</strong></td><td>An update changed how history is stored: <code>relay graph rebuild</code></td></tr>
+              <tr><td><code>RELAY_FALKOR_URL</code> seems ignored, or wins over <code>enable</code></td><td>The env var beats the saved file. <code>relay graph status</code> shows which is in use</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>More detail — persistence, recovery after a hard shutdown, the full design — is in <a href="https://github.com/prakrititz/relayBrain/blob/main/docs/MEMORY-GRAPH.md" target="_blank" rel="noopener">docs/MEMORY-GRAPH.md ↗</a>.</p>
       </section>
 
       <!-- ------------------------------------------ concept: locking -- -->
@@ -332,7 +669,7 @@ $ relay pull                      # take the host's current working state</code>
       <section id="concept-room">
         <p class="docs-kicker">Core concepts</p>
         <h2>Rooms &amp; the host model</h2>
-        <p>A <strong>room</strong> is one host machine plus the guests connected to it. There is no cloud component: <code>relay serve</code> binds the API to <code>127.0.0.1:3001</code>, and sharing means opening an ngrok tunnel straight to that laptop.</p>
+        <p>A <strong>room</strong> is one host machine plus the guests connected to it. There is no cloud component: <code>relay serve</code> binds the API to <code>127.0.0.1:3001</code>, and sharing means opening a tunnel (Cloudflare, ngrok or Tailscale) straight to that laptop. With the memory graph on, the host's FalkorDB is the room's brain: guests' graph queries are forwarded to it.</p>
 
         <div class="code-block" data-lang="text">
           <div class="code-block-head"><span class="dot"></span><span class="label">topology</span><span class="lang">text</span></div>
@@ -341,7 +678,7 @@ $ relay pull                      # take the host's current working state</code>
   Copilot ─┼──► lock table ◄── dep graph ──│ relay serve  │──► Mission Control
   Codex ───┤        ▲                      │  (your host) │          ▲
   Antigravity ┘     │                      └──────┬───────┘          │
-                    │       ngrok tunnel          │                  │
+                    │   cloudflare / ngrok      │                  │
               teammate's relay ◄──── patches ─────┴──────────────────┘</code></pre>
         </div>
 
@@ -351,9 +688,10 @@ $ relay pull                      # take the host's current working state</code>
             <tbody>
               <tr><td>Claim / release</td><td>pre- and post-tool hooks</td><td>Exclusive write access to a file</td></tr>
               <tr><td>Dependency graph</td><td>tree-sitter import scan</td><td>Files <em>affected by</em> the edit</td></tr>
-              <tr><td>Room</td><td><code>relay serve</code> + ngrok tunnel</td><td>One shared lock table across machines</td></tr>
+              <tr><td>Room</td><td><code>relay serve</code> + a tunnel</td><td>One shared lock table across machines</td></tr>
               <tr><td>Patches</td><td><code>relay push</code> / <code>relay pull</code></td><td>Working-tree state without full copies</td></tr>
-              <tr><td>Board</td><td>Mission Control (<code>:3002</code>)</td><td>Who holds what, right now</td></tr>
+              <tr><td>Board</td><td>Mission Control (<code>:3001</code>)</td><td>Who holds what, right now</td></tr>
+              <tr><td>Memory graph</td><td>FalkorDB on the host (optional)</td><td>Who did what, and why — for every agent</td></tr>
             </tbody>
           </table>
         </div>
@@ -448,10 +786,11 @@ registered api-server (prj_8f31a2)</code></pre></div>
         <details class="cmd-entry" open>
           <summary><code class="cmd-name">relay serve</code><span class="cmd-desc">Start the API and Mission Control</span></summary>
           <div class="cmd-body">
-            <p>Boots the coordination API on <code>127.0.0.1:3001</code>, waits for <code>/api/health</code>, then starts Mission Control on <code>:3002</code>. Both processes shut down together on <kbd>Ctrl-C</kbd>, including their child process trees on Windows.</p>
+            <p>Boots the coordination API on <code>127.0.0.1:3001</code> and serves the prebuilt Mission Control from the same port. In a source checkout the UI is rebuilt once, only after its code changes; <code>:3002</code> redirects to <code>:3001</code>. Everything shuts down together on <kbd>Ctrl-C</kbd>, including child process trees on Windows.</p>
             <div class="code-block" data-lang="bash">
-<pre><code>$ relay serve                    # API + Mission Control
+<pre><code>$ relay serve                    # API + Mission Control on :3001
 $ relay serve --no-ui            # API + coordinator only
+$ relay serve --dev              # Mission Control via next dev on :3002
 $ relay serve --port 4001        # move the API off 3001</code></pre>
             </div>
             <div class="docs-table-wrap">
@@ -459,11 +798,12 @@ $ relay serve --port 4001        # move the API off 3001</code></pre>
                 <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
                 <tbody>
                   <tr><td><code>--no-ui</code></td><td>Skip Mission Control; run the API and coordinator only</td></tr>
+                  <tr><td><code>--dev</code></td><td>Run Mission Control with <code>next dev</code> on <code>RELAY_UI_PORT</code> (hot reload; slow first page load). Source checkouts only</td></tr>
                   <tr><td><code>--port &lt;n&gt;</code></td><td>API port (overrides <code>RELAY_PORT</code>, default <code>3001</code>)</td></tr>
                 </tbody>
               </table>
             </div>
-            <p>The board port comes from <code>RELAY_UI_PORT</code> (default <code>3002</code>). If <code>next</code> is missing you will get <code>Mission Control is not installed — run npm install</code>.</p>
+            <p>With <code>--dev</code>, the board port comes from <code>RELAY_UI_PORT</code> (default <code>3002</code>). If <code>next</code> is missing you will get <code>Mission Control is not installed — run npm install</code>.</p>
           </div>
         </details>
 
@@ -568,13 +908,22 @@ $ relay --help</code></pre></div>
               <tr><td><code>relay whoami</code></td><td>Show the signed-in GitHub user and active project</td></tr>
               <tr><td><code>relay clone &lt;url&gt; [dir]</code></td><td>git clone + register workspace + install agent hooks</td></tr>
               <tr><td><code>relay add &lt;path&gt;</code></td><td>Attach an existing local repo</td></tr>
-              <tr><td><code>relay serve</code></td><td>API on <code>127.0.0.1:3001</code> + Mission Control on <code>:3002</code></td></tr>
+              <tr><td><code>relay init [path]</code></td><td>Re-wire hooks, MCP and agent instructions in a repo</td></tr>
+              <tr><td><code>relay serve</code></td><td>API + Mission Control on <code>127.0.0.1:3001</code></td></tr>
+              <tr><td><code>relay serve --dev</code></td><td>Mission Control with hot reload on <code>:3002</code></td></tr>
               <tr><td><code>relay serve --no-ui</code></td><td>API + coordinator only</td></tr>
               <tr><td><code>relay push</code></td><td>Send your dirty working-tree files to the room</td></tr>
               <tr><td><code>relay pull</code></td><td>Apply the host's current dirty files onto this clone</td></tr>
               <tr><td><code>relay status</code></td><td>Health check (room, role, host, ports)</td></tr>
               <tr><td><code>relay mcp-url</code></td><td>Print the MCP config for this room's shared-context endpoint</td></tr>
               <tr><td><code>relay doctor</code></td><td>Diagnose an empty Coordinator board</td></tr>
+              <tr><td><code>relay graph up</code></td><td>Start FalkorDB in Docker</td></tr>
+              <tr><td><code>relay graph enable [url]</code></td><td>Save the FalkorDB URL and switch relay onto the graph</td></tr>
+              <tr><td><code>relay graph status</code></td><td>Config, connection and per-project ingest state</td></tr>
+              <tr><td><code>relay graph stats [id|all]</code></td><td>Node and edge counts per project</td></tr>
+              <tr><td><code>relay graph rebuild [id|all]</code></td><td>Rebuild a graph from relay history</td></tr>
+              <tr><td><code>relay graph seed [id]</code></td><td>Seed a five-agent demo graph</td></tr>
+              <tr><td><code>relay graph disable</code></td><td>Turn the graph off (next <code>relay serve</code>)</td></tr>
             </tbody>
           </table>
         </div>
@@ -657,6 +1006,10 @@ $ relay --help</code></pre></div>
               <tr><td><code>relay_update_task</code> / <code>relay_get_active_tasks</code></td><td>Append / read tasks</td></tr>
               <tr><td><code>relay_get_project_context</code></td><td>Full JSON project context</td></tr>
               <tr><td><code>relay_sync</code></td><td>Re-read agent transcripts into unified history</td></tr>
+              <tr><td><code>relay_room_brief</code></td><td>Teammate activity: peer chat, edits, tool activity, live locks</td></tr>
+              <tr><td><code>relay_get_collision_stats</code></td><td>Lifetime counts of collisions relay prevented</td></tr>
+              <tr><td><code>relay_session_brief</code></td><td>Memory-graph brief for files you are about to edit — see <a href="#memory-queries">Queries &amp; agent tools</a></td></tr>
+              <tr><td><code>relay_graph_query</code></td><td>Run a named memory-graph query; returns rows and the Cypher</td></tr>
             </tbody>
           </table>
         </div>
@@ -674,7 +1027,9 @@ $ relay --help</code></pre></div>
           <table class="docs-table">
             <thead><tr><th>Surface</th><th>URL</th></tr></thead>
             <tbody>
-              <tr><td>Dashboard</td><td><code>http://localhost:3002</code></td></tr>
+              <tr><td>Dashboard</td><td><code>http://localhost:3001</code></td></tr>
+              <tr><td>Memory Graph tab</td><td><code>http://localhost:3001/?tab=graph</code></td></tr>
+              <tr><td>FalkorDB browser</td><td><code>http://localhost:3010</code> (with <code>relay graph up</code>)</td></tr>
               <tr><td>API health</td><td><code>http://127.0.0.1:3001/api/health</code></td></tr>
             </tbody>
           </table>
@@ -692,6 +1047,7 @@ $ relay --help</code></pre></div>
               <tr><td>Activity timeline</td><td>Claims, releases, pushes and pulls in order</td></tr>
               <tr><td>Team &amp; presence</td><td>Who is online, plus <strong>Share</strong> and <strong>Join</strong> for the room</td></tr>
               <tr><td>Conflict notices</td><td>Overlapping edits surfaced within seconds</td></tr>
+              <tr><td>Memory Graph</td><td>Click a file for its agents, sessions, prompts, blocks and decisions; hotspots; search; the Cypher behind every panel</td></tr>
             </tbody>
           </table>
         </div>
@@ -713,6 +1069,9 @@ $ relay --help</code></pre></div>
               <tr><td><code>/api/push</code></td><td>POST</td><td>Send dirty working-tree files to the room</td></tr>
               <tr><td><code>/api/pull</code></td><td>POST</td><td>Apply the host's dirty files onto this clone</td></tr>
               <tr><td><code>/mcp</code></td><td>HTTP</td><td>Read-only room context for MCP clients</td></tr>
+              <tr><td><code>/api/graph/queries</code></td><td>GET</td><td>Names of the memory-graph queries</td></tr>
+              <tr><td><code>/api/graph/query/:name</code></td><td>GET / POST</td><td>Run a named query; guests are answered by the host's graph</td></tr>
+              <tr><td><code>/api/graph/health</code></td><td>GET</td><td>Whether the memory graph is on and connected</td></tr>
             </tbody>
           </table>
         </div>
@@ -738,8 +1097,13 @@ $ curl -s -X POST http://127.0.0.1:3001/api/push -d '{}'</code></pre>
             <thead><tr><th>Variable</th><th>Default</th><th>What it controls</th></tr></thead>
             <tbody>
               <tr><td><code>RELAY_PORT</code></td><td><code>3001</code></td><td>Coordination API port</td></tr>
-              <tr><td><code>RELAY_UI_PORT</code></td><td><code>3002</code></td><td>Mission Control port</td></tr>
-              <tr><td><code>RELAY_UI_ORIGIN</code></td><td><code>http://localhost:3002</code></td><td>Origin the API accepts board requests from (CORS)</td></tr>
+              <tr><td><code>RELAY_UI_PORT</code></td><td><code>3002</code></td><td>Mission Control port for <code>relay serve --dev</code>; otherwise it redirects to the API port</td></tr>
+              <tr><td><code>RELAY_UI_ORIGIN</code></td><td>the UI's origin</td><td>Origin the API accepts board requests from (CORS)</td></tr>
+              <tr><td><code>RELAY_FALKOR_URL</code></td><td>from <code>~/.relay/falkor.json</code></td><td><code>falkor://[user:pass@]host:port</code>; overrides the saved URL</td></tr>
+              <tr><td><code>RELAY_FALKOR_DISABLED</code></td><td><code>0</code></td><td><code>1</code> = graph off, whatever is saved</td></tr>
+              <tr><td><code>RELAY_FALKOR_TEXT</code></td><td><code>1</code></td><td><code>0</code> = metadata-only graph (no chat text or diffs)</td></tr>
+              <tr><td><code>RELAY_FALKOR_TEXT_DAYS</code></td><td><code>90</code></td><td>Chat text and diffs older than this are cleared; nodes and edges stay</td></tr>
+              <tr><td><code>RELAY_PUBLIC_READONLY</code></td><td><code>0</code></td><td><code>1</code> = hosted demo: remote callers may only read</td></tr>
               <tr><td><code>GITHUB_CLIENT_ID</code></td><td>—</td><td>Enables the device-flow login fallback</td></tr>
               <tr><td><code>GITHUB_CLIENT_SECRET</code></td><td>—</td><td>Pairs with the client id for Mission Control sign-in</td></tr>
             </tbody>
@@ -749,13 +1113,11 @@ $ curl -s -X POST http://127.0.0.1:3001/api/push -d '{}'</code></pre>
         <div class="code-block" data-lang="bash">
           <div class="code-block-head"><span class="dot"></span><span class="label">moving off the default ports</span><span class="lang">bash</span></div>
 <pre><code>$ export RELAY_PORT=4001
-$ export RELAY_UI_PORT=4002
-$ export RELAY_UI_ORIGIN=http://localhost:4002
-$ relay serve</code></pre>
+$ relay serve                # API + Mission Control on :4001</code></pre>
         </div>
 
         <h3 id="configuration-state">Where state lives</h3>
-        <p>There is no database. Everything is files on your own disk.</p>
+        <p>Coordination state is files on your own disk. The memory graph, when on, lives in FalkorDB.</p>
         <div class="docs-table-wrap">
           <table class="docs-table">
             <thead><tr><th>File</th><th>Holds</th></tr></thead>
@@ -764,6 +1126,8 @@ $ relay serve</code></pre>
               <tr><td>Session store</td><td>The GitHub identity from <code>relay login</code></td></tr>
               <tr><td>Project registry</td><td>Workspaces registered by <code>relay clone</code> / <code>relay add</code></td></tr>
               <tr><td>Hook configs</td><td>Per-agent files listed under <a href="#hooks">Agent hooks</a></td></tr>
+              <tr><td><code>~/.relay/falkor.json</code></td><td>The saved FalkorDB URL from <code>relay graph enable</code></td></tr>
+              <tr><td>Docker volume (FalkorDB)</td><td>The memory graph itself, snapshotted to disk; survives restarts</td></tr>
             </tbody>
           </table>
         </div>
@@ -775,6 +1139,7 @@ $ relay serve</code></pre>
             <tbody>
               <tr><td>API &amp; coordination</td><td><code>express</code>, <code>cors</code>, <code>ws</code></td></tr>
               <tr><td>Dependency graph</td><td><code>@vscode/tree-sitter-wasm</code></td></tr>
+              <tr><td>Memory graph</td><td><code>falkordb</code> (client)</td></tr>
               <tr><td>Mission Control</td><td><code>next</code>, <code>react</code></td></tr>
             </tbody>
           </table>
@@ -849,8 +1214,8 @@ $ relay serve</code></pre>
 
         <h3 id="troubleshooting-ports">Port already in use</h3>
         <div class="code-block" data-lang="bash">
-<pre><code>$ relay serve --port 4001                    # API only
-$ RELAY_UI_PORT=4002 relay serve --port 4001  # both, plus set RELAY_UI_ORIGIN</code></pre>
+<pre><code>$ relay serve --port 4001                    # API + Mission Control on :4001
+$ RELAY_UI_PORT=4002 relay serve --dev       # if :3002 is taken in dev mode</code></pre>
         </div>
 
         <div class="callout callout-tip">
@@ -866,6 +1231,9 @@ $ RELAY_UI_PORT=4002 relay serve --port 4001  # both, plus set RELAY_UI_ORIGIN</
 
         <h3 id="faq-account">Do I need an account?</h3>
         <p>No. <code>relay login</code> reads a GitHub identity so locks can be attributed to a person, but there is no /.relay account server, no sign-up, and no hosted state.</p>
+
+        <h3 id="faq-falkor">Do I need FalkorDB?</h3>
+        <p>No. Locking, patch sync and Mission Control work without it. The memory graph is an add-on, and only the host runs it — room guests read the host's graph. No Docker? Use a hosted FalkorDB. See <a href="#memory-new-pc">A new PC</a>.</p>
 
         <h3 id="faq-branch">Does this replace Git?</h3>
         <p>No — it sits under it. Git coordinates humans committing minutes apart. /.relay coordinates agents editing the same files right now. You still branch, commit and merge exactly as before.</p>
@@ -904,8 +1272,8 @@ $ RELAY_UI_PORT=4002 relay serve --port 4001  # both, plus set RELAY_UI_ORIGIN</
 
   <footer class="footer shell">
     <a class="wordmark" href="index.html"><img src="logo.png" alt="" class="inline-logo" /> /.relay</a>
-    <p>The coordination layer for AI agents.</p>
-    <p>© 2026 /.relay</p>
+    <p>relayBrain · <a class="powered-by" href="https://www.falkordb.com" target="_blank" rel="noopener">powered by <img src="https://avatars.githubusercontent.com/u/140048192?s=64&v=4" alt="" width="16" height="16"> FalkorDB</a></p>
+    <p><a href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Source on GitHub ↗</a> · <a href="https://www.npmjs.com/package/relaybrain" target="_blank" rel="noopener">npm ↗</a> · © 2026 /.relay</p>
   </footer>
 
   <script src="docs.js"></script>

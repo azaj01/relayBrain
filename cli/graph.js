@@ -264,6 +264,14 @@ function seed(target) {
 
 async function graph(args) {
   const [sub, arg] = args;
+  // `relay graph seed --help` must not seed a project called "--help".
+  if (args.some((a) => a === "--help" || a === "-h")) return help();
+  if (arg && arg.startsWith("-")) {
+    console.error(`unknown option ${arg}`);
+    help();
+    process.exitCode = 1;
+    return;
+  }
   if (sub === "up") return up();
   if (sub === "enable") return enable(arg);
   if (sub === "disable") return disable();

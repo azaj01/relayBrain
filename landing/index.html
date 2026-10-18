@@ -14,7 +14,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Space+Grotesk:wght@500;600;700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="brain_animation.css">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 
 <body>
@@ -36,7 +36,7 @@
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy">
-        <p class="eyebrow"><span class="status-dot"></span> The coordination layer for AI agents</p>
+        <p class="eyebrow"><span class="status-dot"></span> relayBrain · The coordination layer for AI agents · <a class="powered-by" href="https://www.falkordb.com" target="_blank" rel="noopener">Powered by <img src="https://avatars.githubusercontent.com/u/140048192?s=64&v=4" alt="" width="16" height="16"> FalkorDB</a></p>
         <h1>Twelve agents.<br><span>One repository. Zero collisions.</span></h1>
         <p class="hero-subtitle">Claude Code, Cursor, Copilot, Codex, Antigravity — running in parallel, on four
           machines, writing to the same files. ./relay locks, resolves, and syncs between them, and remembers why
@@ -45,6 +45,9 @@
           <a class="button" href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Get the source
             <span aria-hidden="true">↗</span></a>
           <a class="button" href="#memory-graph">See the memory graph</a>
+          <a class="button star-button" href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener"
+            aria-label="Star relayBrain on GitHub"><span aria-hidden="true">★</span> Star on GitHub<span
+              class="star-count" data-star-count hidden></span></a>
         </div>
       </div>
 
@@ -338,6 +341,7 @@ MATCH (c:Contention)-[:ON]->(f:File {key:$file})
 MATCH (c)-[:HELD_BY]->(s:Session)
 RETURN s.intent, c.attempts</pre>
         <div class="terminal-command"><span>$</span> relay graph up &amp;&amp; relay graph enable<strong>✓ memory graph on</strong></div>
+        <div class="terminal-command"><span>$</span> relay graph status<strong>graph running, connected</strong></div>
       </div>
     </section>
 
@@ -346,8 +350,8 @@ RETURN s.intent, c.attempts</pre>
         <div class="section-index">06 / How to get started</div>
         <h2>Two commands<br>on the host.</h2>
       </div>
-      <p class="protocol-intro" style="margin-left: 0; margin-top: 0; margin-bottom: 50px;">Clone the repo, link the
-        CLI, and point ./relay at a project. Cloning through <code>relay</code> registers the workspace and installs the
+      <p class="protocol-intro" style="margin-left: 0; margin-top: 0; margin-bottom: 50px;">Install the CLI from npm
+        and point ./relay at a project. Cloning through <code>relay</code> registers the workspace and installs the
         claim/release hooks for every agent you use — nobody has to remember a command afterwards.</p>
 
       <div class="file-tree" aria-label="Install ./relay" style="margin-bottom: 50px;">
@@ -396,8 +400,53 @@ RETURN s.intent, c.attempts</pre>
         </table>
       </div>
 
+      <p class="protocol-intro" style="margin-left: 0; margin-top: 50px; margin-bottom: 50px;">The memory graph runs on
+        the host only. Teammates need no database — their graph queries go to the host's FalkorDB through the room. No
+        Docker on the host? Point <code>relay graph enable</code> at a hosted FalkorDB instead.</p>
+
+      <div class="commands-table-wrapper">
+        <table class="commands-table">
+          <thead>
+            <tr>
+              <th>Memory graph command</th>
+              <th>What it does</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>relay graph up</code></td>
+              <td>Start FalkorDB in Docker on <code>localhost:6379</code> (browser UI on <code>:3010</code>)</td>
+            </tr>
+            <tr>
+              <td><code>relay graph enable [url]</code></td>
+              <td>Save the URL and switch relay onto the graph — local Docker by default, or <code>falkor://user:pass@host:port</code></td>
+            </tr>
+            <tr>
+              <td><code>relay graph status</code></td>
+              <td>Is relay connected, when was each project last ingested</td>
+            </tr>
+            <tr>
+              <td><code>relay graph stats</code></td>
+              <td>Node and edge counts per project</td>
+            </tr>
+            <tr>
+              <td><code>relay graph rebuild</code></td>
+              <td>Pull existing agent history into the graph</td>
+            </tr>
+            <tr>
+              <td><code>relay graph seed proj_demo</code></td>
+              <td>A realistic five-agent demo graph to explore</td>
+            </tr>
+            <tr>
+              <td><code>relay graph disable</code></td>
+              <td>Turn it off; locking and sync keep working without it</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <p class="protocol-note" style="margin-top: 40px;"><a href="docs.html" style="text-decoration: underline;">Read
-          the docs — installation, every command, hooks, MCP, troubleshooting ↗</a></p>
+          the docs — installation, the memory graph, every command, hooks, MCP, troubleshooting ↗</a> · <a href="docs.html#memory-new-pc" style="text-decoration: underline;">Setting up a new PC ↗</a></p>
     </section>
 
     <section class="features shell section">
@@ -452,12 +501,12 @@ RETURN s.intent, c.attempts</pre>
 
   <footer class="footer shell">
     <a class="wordmark" href="#top"><img src="logo.png" alt="" class="inline-logo" /> ./relay</a>
-    <p>The coordination layer for AI agents.</p>
+    <p>relayBrain · <a class="powered-by" href="https://www.falkordb.com" target="_blank" rel="noopener">powered by <img src="https://avatars.githubusercontent.com/u/140048192?s=64&v=4" alt="" width="16" height="16"> FalkorDB</a></p>
     <p><a href="https://github.com/prakrititz/relayBrain" target="_blank" rel="noopener">Source on GitHub ↗</a> · <a href="https://www.npmjs.com/package/relaybrain" target="_blank" rel="noopener">npm ↗</a> · © 2026 ./relay</p>
   </footer>
 
   <script src="brain_animation.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 
 </html>

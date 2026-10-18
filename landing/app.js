@@ -138,3 +138,22 @@ if (carousel && prevBtn && nextBtn) {
     carousel.scrollBy({ left: -carousel.offsetWidth, behavior: 'smooth' });
   });
 }
+
+// Live GitHub star count on the "Star on GitHub" button. Unauthenticated API calls
+// are rate-limited, so a failure just leaves the button without a number.
+(function starCount() {
+  const slots = document.querySelectorAll("[data-star-count]");
+  if (!slots.length || !window.fetch) return;
+  fetch("https://api.github.com/repos/prakrititz/relayBrain")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((repo) => {
+      if (!repo || typeof repo.stargazers_count !== "number") return;
+      const n = repo.stargazers_count;
+      const text = n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+      slots.forEach((el) => {
+        el.textContent = text;
+        el.hidden = false;
+      });
+    })
+    .catch(() => {});
+})();
