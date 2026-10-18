@@ -76,6 +76,7 @@ const { skipPublish, applyClash, aliveLock } = require("./lib/peerClash");
 const { dirtyFiles } = require("./lib/dirtyFiles");
 const { authorizeUrl, exchangeCode } = require("./lib/githubOAuth");
 const {
+  findNotice,
   listNotices,
   unreadCount,
   pushNotice,
@@ -1491,6 +1492,11 @@ async function main() {
       const key = `invite:${room.roomId}`;
       live.add(key);
       if (current?.roomId && current.roomId === room.roomId) continue;
+      // A host keeps one roomId across sessions, so the invite key repeats. A new
+      // tunnel URL means the host started hosting again: bring the invite back
+      // even if the last one was dismissed (otherwise it stays hidden for a week).
+      const prior = findNotice(key);
+      const revive = Boolean(prior && room.url && prior.payload?.url !== room.url);
       emitNotice({
         type: "invite",
         key,
@@ -1506,7 +1512,7 @@ async function main() {
           projectName: room.projectName || project?.name || null,
           projectId: project?.id || null,
         },
-      });
+      }, { revive });
     }
     for (const n of listNotices()) {
       if (n.type === "invite" && n.key && !live.has(n.key) && !(current?.roomId && n.key === `invite:${current.roomId}`)) {
@@ -2080,6 +2086,19 @@ async function main() {
     dashboard.invites = room?.role === "host" && !isRemoteRequest(req) ? inviteView(room) : [];
     dashboard.openRooms =
       !isRemoteRequest(req) && discoverState.key === repoKeyFromRemote(project.remoteUrl) ? discoverState.rooms : [];
+    // Outside a room, presence only knew room members, so everyone — including
+    // the viewer, and a teammate who is visibly hosting — read as offline while
+    // the Team tab simultaneously said "@x is hosting". Mark what we do know.
+    if (!room?.url && !isRemoteRequest(req)) {
+      const me = currentUser();
+      const hosting = new Set(dashboard.openRooms.map((r) => String(r.hostLogin || "").toLowerCase()));
+      dashboard.collaborators = dashboard.collaborators.map((c) => {
+        const key = String(c.login || "").toLowerCase();
+        if (sameLogin(c.login, me.login)) return { ...c, online: true };
+        if (hosting.has(key)) return { ...c, online: true, hosting: true };
+        return c;
+      });
+    }
     if (!isRemoteRequest(req) && room?.role !== "host") {
       refreshOpenRooms(project)
         .then((rooms) => {

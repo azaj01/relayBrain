@@ -132,7 +132,14 @@ function dismissByKey(key) {
   return count;
 }
 
+/** The stored row for a key, dismissed or not (raw, with payload). */
+function findNotice(key) {
+  if (!key) return null;
+  return prune(load()).find((n) => n.key === key) || null;
+}
+
 module.exports = {
+  findNotice,
   listNotices,
   unreadCount,
   pushNotice,
