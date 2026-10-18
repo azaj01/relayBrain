@@ -38,7 +38,7 @@ const { listDir, listGithubRepos } = require("./lib/localBrowse");
 const { ingest: ingestSupergraph } = require("./lib/supergraph");
 const { cloneRepo, addLocal, detectRemoteUrl } = require("./lib/cloneRepo");
 const { installProjectHooks, installGlobalHooks } = require("./lib/installHooks");
-const { loadRoom, saveRoom, clearRoom, share: shareRoom, ensureTunnel, activeTunnelUrl, killCloudflared, upsertMember, markLeft, dropMember, membersView } = require("./lib/room");
+const { loadRoom, saveRoom, clearRoom, share: shareRoom, ensureTunnel, activeTunnelUrl, killCloudflared, upsertMember, markLeft, dropMember, membersView, detectProviders } = require("./lib/room");
 const { localSnapshot, savePeerSnapshot, mergeRoomViews, clearPeers } = require("./lib/roomSync");
 const { compileRoomAsk } = require("./lib/roomAsk");
 const { recordCollision, mergeCollisionStats, loadLocalCollisions } = require("./lib/collisionMetrics");
@@ -2481,6 +2481,10 @@ async function main() {
   // publicRoom strips invite and member-token hashes: this route answers
   // through the tunnel, and the raw room file is a credential store.
   app.get("/api/room", (_req, res) => res.json({ room: publicRoom(loadRoom()) }));
+  app.get("/api/room/providers", (_req, res) => {
+    const port = parsePort(process.argv);
+    res.json({ ok: true, ...detectProviders(port) });
+  });
   app.post("/api/room/share", async (req, res) => {
     const project = currentProject();
     const existing = loadRoom(project?.path);
@@ -2491,7 +2495,12 @@ async function main() {
       });
     }
     const customUrl = req.body?.url ? String(req.body.url).trim().replace(/\/$/, "") : null;
-    const result = await shareRoom(parsePort(process.argv), { ...shareExtras(project), ...(customUrl ? { url: customUrl } : {}) });
+    const provider = req.body?.provider ? String(req.body.provider).trim().toLowerCase() : null;
+    const result = await shareRoom(parsePort(process.argv), {
+      ...shareExtras(project),
+      ...(customUrl ? { url: customUrl } : {}),
+      ...(provider ? { provider } : {}),
+    });
     if (result.ok) {
       syncRoomLocks();
       result.warning = await publishAndWatch(result.room, project);

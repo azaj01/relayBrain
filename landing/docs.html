@@ -438,7 +438,7 @@ db:     reachable, 3 graph(s)</code></pre>
 <pre><code>$ relay graph rebuild          # every project
 $ relay graph rebuild &lt;id&gt;     # one project (ids: curl http://127.0.0.1:3001/api/projects)</code></pre>
             </div>
-            <p>New activity is ingested automatically whenever an agent turn ends. Want something to look at right away? <code>relay graph seed proj_demo</code> fills a realistic five-agent demo graph of its own.</p>
+            <p>New activity is ingested automatically whenever an agent turn ends. Want something to look at right away? <code>relay graph seed</code> fills a realistic five-agent demo graph in its own sandbox.</p>
           </div>
         </div>
       </section>
@@ -530,9 +530,9 @@ $ relay graph rebuild proj_45dbc0415beb</code></pre></div>
         <details class="cmd-entry">
           <summary><code class="cmd-name">relay graph seed [id]</code><span class="cmd-desc">Seed a 5-agent demo graph</span></summary>
           <div class="cmd-body">
-            <p>Fills a realistic coordination graph — five agents, overlaps, blocks, decisions — for demos and for exploring the Memory Graph tab.</p>
-            <div class="code-block" data-lang="bash"><pre><code>$ relay graph seed proj_demo     # its own graph, apart from your real projects</code></pre></div>
-            <p>Give it an id. Without one it seeds your first registered project, mixing demo data into that project's real graph.</p>
+            <p>Fills a realistic coordination graph — five agents, overlaps, blocks, decisions — for demos and for exploring the Memory Graph tab. It goes into its own sandbox graph (<code>demo_&lt;projectId&gt;</code>), never into your real project's graph; Mission Control's Memory Graph tab can switch between the two.</p>
+            <div class="code-block" data-lang="bash"><pre><code>$ relay graph seed               # sandbox for your first project
+$ relay graph seed proj_45dbc0   # sandbox for a specific project</code></pre></div>
           </div>
         </details>
 
@@ -604,7 +604,7 @@ $ curl -s "http://127.0.0.1:3001/api/graph/query/search_memory?q=jwt"</code></pr
               <tr><td><em>FalkorDB unreachable (retrying)</em></td><td>The container stopped (<code>docker ps</code>). <code>relay graph up</code>; relay reconnects by itself within ~30 s</td></tr>
               <tr><td>Memory Graph tab: <em>not enabled on this relay</em></td><td>Click <strong>Enable</strong>, or <code>relay graph enable</code></td></tr>
               <tr><td>Guest: <em>room host unreachable</em></td><td>The host's tunnel is down or relay isn't running there. The host re-shares from <strong>Team</strong></td></tr>
-              <tr><td>Graph is empty</td><td>Ingest runs when an agent turn ends. For older history, <code>relay graph rebuild</code>. To just look around, <code>relay graph seed proj_demo</code></td></tr>
+              <tr><td>Graph is empty</td><td>Ingest runs when an agent turn ends. For older history, <code>relay graph rebuild</code>. To just look around, <code>relay graph seed</code></td></tr>
               <tr><td>Claude chats missing</td><td>Run one agent turn, then <strong>Sync</strong> in Mission Control. Sessions opened in the repo or any folder above it that touch the repo are picked up</td></tr>
               <tr><td><code>relay graph status</code> shows <strong>NEEDS REBUILD</strong></td><td>An update changed how history is stored: <code>relay graph rebuild</code></td></tr>
               <tr><td><code>RELAY_FALKOR_URL</code> seems ignored, or wins over <code>enable</code></td><td>The env var beats the saved file. <code>relay graph status</code> shows which is in use</td></tr>

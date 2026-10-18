@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRelay } from "@/lib/RelayContext";
 import { apiUrl } from "@/lib/api";
-import type { OpenRoom, Room } from "@/lib/types";
+import type { OpenRoom, Room, TunnelProvider } from "@/lib/types";
 import ui from "@/styles/ui.module.css";
 
 function inviteLabel(state: string) {
@@ -17,10 +17,65 @@ function sameLogin(a?: string | null, b?: string | null) {
   return Boolean(a) && Boolean(b) && a!.toLowerCase() === b!.toLowerCase();
 }
 
+function providerLabel(provider?: string | null, url?: string | null) {
+  const p = String(provider || "").toLowerCase();
+  const u = String(url || "").toLowerCase();
+  if (p === "cloudflared" || u.includes(".trycloudflare.com")) return "Cloudflare Quick Tunnel";
+  if (p === "tailscale" || u.includes(".ts.net")) return "Tailscale Funnel";
+  if (p === "ngrok" || u.includes("ngrok")) return "ngrok";
+  if (p === "lan" || /^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(u)) return "Direct LAN";
+  return "Custom URL";
+}
+
+const DEFAULT_PROVIDERS: TunnelProvider[] = [
+  {
+    id: "cloudflared",
+    name: "Cloudflare Quick Tunnel",
+    badge: "Recommended",
+    installed: false,
+    ready: false,
+    command: "cloudflared tunnel --url http://127.0.0.1:3001",
+    installHint: "winget install Cloudflare.cloudflared",
+    description: "Fast global edge HTTPS tunnel — zero signup, no account, no rate limits.",
+  },
+  {
+    id: "tailscale",
+    name: "Tailscale Funnel",
+    badge: "Mesh / HTTPS",
+    installed: false,
+    ready: false,
+    command: "tailscale funnel --bg 3001",
+    installHint: "tailscale funnel 3001",
+    description: "Private Tailnet mesh or public HTTPS via Tailscale Funnel.",
+  },
+  {
+    id: "lan",
+    name: "Direct LAN / Custom URL",
+    badge: "Zero-install LAN",
+    installed: true,
+    ready: true,
+    command: "http://192.168.x.x:3001",
+    description: "Instant zero-install sharing on the same Wi-Fi/LAN, or paste any self-hosted/tunnel URL (Railway, Fly.io, Render).",
+  },
+  {
+    id: "ngrok",
+    name: "ngrok",
+    badge: "Legacy",
+    installed: false,
+    ready: false,
+    command: "ngrok http 3001",
+    installHint: "winget install Ngrok.Ngrok",
+    description: "Classic HTTP tunnel (requires ngrok authtoken; subject to free-tier rate limits).",
+  },
+];
+
 export function TeamPanel() {
   const { dashboard, sync, user } = useRelay();
   const [room, setRoom] = useState<Room | null>(dashboard?.room || null);
   const [openRooms, setOpenRooms] = useState<OpenRoom[]>(dashboard?.openRooms || []);
+  const [providers, setProviders] = useState<TunnelProvider[]>(DEFAULT_PROVIDERS);
+  const [lanUrl, setLanUrl] = useState<string | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<TunnelProvider["id"]>("cloudflared");
   const [busy, setBusy] = useState(false);
   const [busyLogin, setBusyLogin] = useState("");
   const [joinUrl, setJoinUrl] = useState("");
@@ -30,13 +85,40 @@ export function TeamPanel() {
   const [inviteLogin, setInviteLogin] = useState("");
   const [issued, setIssued] = useState<{ login: string; link: string; warning?: string } | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
-  const [hostUrlOpen, setHostUrlOpen] = useState(false);
   const [customHostUrl, setCustomHostUrl] = useState("");
 
   useEffect(() => {
     setRoom(dashboard?.room || null);
     if (dashboard?.openRooms) setOpenRooms(dashboard.openRooms);
   }, [dashboard]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProviders() {
+      try {
+        const res = await fetch(apiUrl("/api/room/providers"));
+        const body = await res.json();
+        if (!cancelled && Array.isArray(body.providers)) {
+          setProviders(body.providers);
+          if (body.lanUrl) {
+            setLanUrl(body.lanUrl);
+            setCustomHostUrl((prev) => prev || body.lanUrl);
+          }
+          // Default to cloudflared if installed, otherwise tailscale if ready, otherwise lan if available
+          const cf = body.providers.find((p: TunnelProvider) => p.id === "cloudflared");
+          const ts = body.providers.find((p: TunnelProvider) => p.id === "tailscale");
+          if (cf?.installed) setSelectedProvider("cloudflared");
+          else if (ts?.ready) setSelectedProvider("tailscale");
+        }
+      } catch {
+        /* keep default provider cards */
+      }
+    }
+    loadProviders();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +146,7 @@ export function TeamPanel() {
   const hosting = room?.role === "host";
   const guest = room?.role === "guest";
   const hostDown = guest && room?.hostReachable === false;
+  const activeProviderCard = providers.find((p) => p.id === selectedProvider) || providers[0];
 
   async function invite(loginRaw: string) {
     const login = loginRaw.trim().replace(/^@/, "");
@@ -124,20 +207,22 @@ export function TeamPanel() {
     }
   }
 
-  async function share(customUrl?: string) {
+  async function share(opts?: { provider?: TunnelProvider["id"]; url?: string }) {
+    const prov = opts?.provider || selectedProvider;
+    const explicitUrl = opts?.url !== undefined ? opts.url.trim() : prov === "lan" ? customHostUrl.trim() : "";
     setBusy(true);
     setHint("");
     try {
+      const payload: Record<string, string> = { provider: prov };
+      if (explicitUrl) payload.url = explicitUrl;
       const res = await fetch(apiUrl("/api/room/share"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(customUrl ? { url: customUrl } : {}),
+        body: JSON.stringify(payload),
       });
       const body = await res.json();
       if (body.ok) {
         setRoom(body.room);
-        setCustomHostUrl("");
-        setHostUrlOpen(false);
         if (body.warning) setHint(body.warning);
       } else setHint(body.hint || body.error || "Could not start sharing");
     } finally {
@@ -251,7 +336,7 @@ export function TeamPanel() {
         ) : null}
       </article>
       <article className={ui.card}>
-        <h3>Shared room</h3>
+        <h3>Shared room &amp; connectivity</h3>
         {room ? (
           <>
             {hosting ? (
@@ -268,11 +353,14 @@ export function TeamPanel() {
               You are the <strong>{room.role}</strong>
               {room.role === "guest" && room.hostProjectName ? (
                 <span style={{ color: "var(--muted)" }}> in {room.hostProjectName}</span>
-              ) : null}
+              ) : null}{" "}
+              <span className={`${ui.badge} ${ui.theirs}`} style={{ marginLeft: 8 }}>
+                via {providerLabel(room.provider, room.url)}
+              </span>
             </p>
             {room.url ? (
               <p>
-                Tunnel: <code>{room.url}</code>
+                Endpoint: <code>{room.url}</code>
               </p>
             ) : null}
             {room.role === "guest" && room.projectPath ? (
@@ -283,7 +371,7 @@ export function TeamPanel() {
             <div className={ui.actions} style={{ justifyContent: "flex-start" }}>
               {room.url ? (
                 <button className={ui.syncBtn} onClick={() => navigator.clipboard.writeText(room.url)}>
-                  Copy tunnel
+                  Copy endpoint URL
                 </button>
               ) : null}
               <button
@@ -303,6 +391,53 @@ export function TeamPanel() {
             </div>
             {hosting ? (
               <>
+                <hr style={{ border: 0, borderTop: "1px solid var(--line)", margin: "16px 0" }} />
+                <h3 style={{ marginBottom: 4 }}>Switch connectivity provider</h3>
+                <p style={{ color: "var(--muted)", marginTop: 0 }}>
+                  Switch tunnels without losing room members or active invites — guests follow your room automatically.
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                  {providers.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`${ui.chip} ${selectedProvider === p.id ? "" : ui.ghost}`}
+                      style={selectedProvider === p.id ? { border: "1px solid var(--accent)" } : undefined}
+                      disabled={busy}
+                      onClick={() => {
+                        setSelectedProvider(p.id);
+                        if (p.id !== "lan") share({ provider: p.id });
+                      }}
+                    >
+                      {p.name} {p.ready ? "●" : ""}
+                    </button>
+                  ))}
+                </div>
+                {selectedProvider === "lan" ? (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+                    <input
+                      className={ui.field}
+                      style={{ maxWidth: 340, margin: 0 }}
+                      value={customHostUrl}
+                      onChange={(e) => setCustomHostUrl(e.target.value)}
+                      placeholder={lanUrl || "http://192.168.1.x:3001 or https://your-host.com"}
+                    />
+                    {lanUrl && customHostUrl !== lanUrl ? (
+                      <button type="button" className={`${ui.chip} ${ui.ghost}`} onClick={() => setCustomHostUrl(lanUrl)}>
+                        Use LAN ({lanUrl})
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={ui.syncBtn}
+                      disabled={busy || !customHostUrl.trim()}
+                      onClick={() => share({ provider: "lan", url: customHostUrl })}
+                    >
+                      Switch to URL
+                    </button>
+                  </div>
+                ) : null}
+
                 <hr style={{ border: 0, borderTop: "1px solid var(--line)", margin: "16px 0" }} />
                 <h3 style={{ marginBottom: 4 }}>Invite someone who isn&apos;t listed</h3>
                 <p style={{ color: "var(--muted)", marginTop: 0 }}>
@@ -364,10 +499,10 @@ export function TeamPanel() {
         ) : (
           <>
             <p style={{ color: "var(--muted)", marginTop: 0 }}>
-              Host from here, or Join when a teammate invites you. The tunnel can change — the room does not.
+              Choose how teammates connect to your workspace, or Join when a teammate invites you. The tunnel can change — the room does not.
             </p>
             {openRooms.length ? (
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 14 }}>
                 {openRooms.map((r) => (
                   <div className={ui.lockRow} key={`${r.hostLogin}:${r.roomId}`}>
                     <span>
@@ -384,33 +519,95 @@ export function TeamPanel() {
                 ))}
               </div>
             ) : null}
-            <button className={ui.syncBtn} onClick={() => share()} disabled={busy}>
-              {busy ? "Starting…" : "Share this workspace"}
-            </button>
-            <button className={`${ui.chip} ${ui.ghost}`} onClick={() => setHostUrlOpen((v) => !v)} style={{ marginLeft: 8 }}>
-              {hostUrlOpen ? "Hide custom URL" : "Use custom tunnel URL"}
-            </button>
-            <button className={`${ui.chip} ${ui.ghost}`} onClick={() => setLinkOpen((v) => !v)} style={{ marginLeft: 8 }}>
-              {linkOpen ? "Hide invite link" : "Have an invite link?"}
-            </button>
-            {hostUrlOpen ? (
-              <div style={{ marginTop: 10 }}>
-                <label>Public tunnel or server URL (Cloudflare Quick Tunnel, Tailscale Funnel, Railway, LAN)</label>
-                <input
-                  className={ui.field}
-                  value={customHostUrl}
-                  onChange={(e) => setCustomHostUrl(e.target.value)}
-                  placeholder="https://xyz.trycloudflare.com"
-                />
-                <div className={ui.actions} style={{ justifyContent: "flex-start" }}>
-                  <button className={ui.syncBtn} onClick={() => share(customHostUrl)} disabled={busy || !customHostUrl.trim()}>
-                    Host at URL
+
+            <div className={ui.choices} style={{ margin: "10px 0 14px" }}>
+              {providers.map((p) => {
+                const isSelected = selectedProvider === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`${ui.choice} ${isSelected ? ui.on : ""}`}
+                    onClick={() => setSelectedProvider(p.id)}
+                  >
+                    <div className={ui.rowBetween} style={{ marginBottom: 4 }}>
+                      <strong style={{ fontSize: 13 }}>{p.name}</strong>
+                      <span
+                        className={ui.badge}
+                        style={{
+                          color: p.ready ? "var(--green)" : p.installed ? "var(--amber)" : "var(--faint)",
+                        }}
+                      >
+                        {p.id === "lan"
+                          ? p.lanIp
+                            ? `LAN ${p.lanIp}`
+                            : "Custom URL"
+                          : p.ready
+                            ? "● Ready"
+                            : p.installed
+                              ? "Installed"
+                              : "CLI not found"}
+                      </span>
+                    </div>
+                    <p style={{ margin: "4px 0 6px", fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}>
+                      {p.description}
+                    </p>
+                    <code style={{ fontSize: 10.5, color: "var(--faint)" }}>
+                      {p.installed || p.id === "lan" ? p.command : `Install: ${p.installHint || p.command}`}
+                    </code>
                   </button>
+                );
+              })}
+            </div>
+
+            {selectedProvider === "lan" ? (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, color: "var(--muted)" }}>
+                  Direct LAN address or custom public URL (Cloudflare, Tailscale, Railway, Fly.io, Render)
+                </label>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>
+                  <input
+                    className={ui.field}
+                    style={{ maxWidth: 380, margin: 0 }}
+                    value={customHostUrl}
+                    onChange={(e) => setCustomHostUrl(e.target.value)}
+                    placeholder={lanUrl || "http://192.168.1.x:3001 or https://your-tunnel.example.com"}
+                  />
+                  {lanUrl ? (
+                    <button
+                      type="button"
+                      className={`${ui.chip} ${ui.ghost}`}
+                      onClick={() => setCustomHostUrl(lanUrl)}
+                    >
+                      Use local LAN ({lanUrl})
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ) : null}
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <button
+                className={ui.syncBtn}
+                onClick={() =>
+                  share({
+                    provider: selectedProvider,
+                    url: selectedProvider === "lan" ? customHostUrl || lanUrl || "" : undefined,
+                  })
+                }
+                disabled={busy || (selectedProvider === "lan" && !(customHostUrl.trim() || lanUrl))}
+              >
+                {busy
+                  ? `Starting ${activeProviderCard?.name || "room"}…`
+                  : `Share via ${activeProviderCard?.name || "Tunnel"}`}
+              </button>
+              <button className={`${ui.chip} ${ui.ghost}`} onClick={() => setLinkOpen((v) => !v)}>
+                {linkOpen ? "Hide invite link" : "Have an invite link?"}
+              </button>
+            </div>
+
             {linkOpen ? (
-              <>
+              <div style={{ marginTop: 12 }}>
                 <label>Paste the invite link</label>
                 <input
                   className={ui.field}
@@ -434,7 +631,7 @@ export function TeamPanel() {
                     Join room
                   </button>
                 </div>
-              </>
+              </div>
             ) : null}
           </>
         )}

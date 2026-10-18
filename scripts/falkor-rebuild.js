@@ -2,32 +2,8 @@
 // Drop one project's memory graph and rebuild it from ~/.relay data.
 //   RELAY_FALKOR_URL=falkor://localhost:6379 node scripts/falkor-rebuild.js <projectId|all> [--keep]
 const falkor = require("../backend/lib/falkor");
-const cursor = require("../backend/lib/falkor/cursor");
-const schema = require("../backend/lib/falkor/schema");
-const { ingestHistory, ingestPeer } = require("../backend/lib/falkor/ingest");
-const analytics = require("../backend/lib/falkor/analytics");
-const { loadRegistry, loadMemory } = require("../backend/lib/store");
-
-async function rebuildOne(project, keep) {
-  const { client } = falkor.state;
-  if (!keep) {
-    await client.deleteGraph(project.id);
-    schema.forget(project.id);
-    cursor.reset(project.id);
-  }
-  const memory = loadMemory(project.id);
-  const history = memory.history || [];
-  const t = Date.now();
-  const result = await ingestHistory(project.id, history, project.path, { full: true });
-  const peers = Object.entries(memory.roomPeers || {});
-  for (const [key, snapshot] of peers) {
-    await ingestPeer(project.id, { snapshot, login: snapshot.login || key, trustRowOwners: key === "host" });
-  }
-  const stats = await analytics.run(project.id);
-  console.log(
-    `${project.id}  ${project.path}\n  events=${history.length} peers=${peers.length} ${JSON.stringify(result)} analytics=${JSON.stringify(stats)} in ${Date.now() - t}ms`
-  );
-}
+const { rebuildProjectGraph } = require("../backend/lib/falkor/demo");
+const { loadRegistry } = require("../backend/lib/store");
 
 async function main() {
   const target = process.argv[2];
@@ -46,7 +22,12 @@ async function main() {
     console.error(`no project ${target}`);
     process.exit(2);
   }
-  for (const p of projects) await rebuildOne(p, keep);
+  for (const p of projects) {
+    const out = await rebuildProjectGraph(falkor, p.id, { keep });
+    console.log(
+      `${out.projectId}  ${out.path}\n  events=${out.events} peers=${out.peers} ${JSON.stringify(out.ingest)} analytics=${JSON.stringify(out.analytics)} in ${out.ms}ms`
+    );
+  }
   await falkor.state.client.close();
   process.exit(0);
 }

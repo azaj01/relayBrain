@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiUrl } from "@/lib/api";
 
+export type GraphMode = "live" | "demo";
+
 export type QueryResult<T = Record<string, unknown>> = {
   ok?: boolean;
   reason?: string;
@@ -12,6 +14,8 @@ export type QueryResult<T = Record<string, unknown>> = {
   cypher?: string;
   rows?: T[];
   source?: string;
+  mode?: GraphMode;
+  graphId?: string;
 };
 
 export type GraphNode = { id: string; kind: "file" | "agent" | "session" | "prompt" | "contention" | "decision"; label: string; props: Record<string, unknown> };
@@ -26,8 +30,14 @@ export type Health = {
   projects: Record<string, { lastIngestAt: number | null; lastError: string | null }>;
 };
 
-export async function graphQuery<T = Record<string, unknown>>(projectId: string, name: string, params: Record<string, string | number | undefined> = {}) {
+export async function graphQuery<T = Record<string, unknown>>(
+  projectId: string,
+  name: string,
+  params: Record<string, string | number | undefined> = {},
+  mode: GraphMode = "live"
+) {
   const qs = new URLSearchParams({ projectId });
+  if (mode === "demo") qs.set("demo", "1");
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") qs.set(k, String(v));
   const res = await fetch(apiUrl(`/api/graph/query/${name}?${qs}`), { cache: "no-store" });
   return (await res.json()) as QueryResult<T> & Record<string, unknown>;
@@ -40,6 +50,24 @@ export async function graphHealth(): Promise<Health | null> {
   } catch {
     return null;
   }
+}
+
+export async function seedDemoGraphApi(projectId: string) {
+  const res = await fetch(apiUrl("/api/graph/seed-demo"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId }),
+  });
+  return res.json();
+}
+
+export async function rebuildGraphApi(projectId: string) {
+  const res = await fetch(apiUrl("/api/graph/rebuild"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId }),
+  });
+  return res.json();
 }
 
 /** Bumps whenever the backend reports a memory-graph write for this project (debounced). */
@@ -73,7 +101,8 @@ export function useQuery<T = Record<string, unknown>>(
   projectId: string | null,
   name: string | null,
   params: Record<string, string | number | undefined>,
-  tick: number
+  tick: number,
+  mode: GraphMode = "live"
 ) {
   const [data, setData] = useState<(QueryResult<T> & Record<string, unknown>) | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,13 +111,13 @@ export function useQuery<T = Record<string, unknown>>(
     if (!projectId || !name) return;
     setLoading(true);
     try {
-      setData(await graphQuery<T>(projectId, name, JSON.parse(key)));
+      setData(await graphQuery<T>(projectId, name, JSON.parse(key), mode));
     } catch (err) {
       setData({ ok: false, reason: String((err as Error).message || err) });
     } finally {
       setLoading(false);
     }
-  }, [projectId, name, key]);
+  }, [projectId, name, key, mode]);
   useEffect(() => {
     run();
   }, [run, tick]);

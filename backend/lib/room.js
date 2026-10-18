@@ -1,9 +1,124 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const { spawn, spawnSync } = require("child_process");
 const { homeRelayDir } = require("./paths");
 const { normalizeWorkspaceRoot } = require("./transcripts/util");
+
+function localLanIp() {
+  try {
+    const nets = os.networkInterfaces() || {};
+    const candidates = [];
+    for (const [name, addrs] of Object.entries(nets)) {
+      if (/vethernet|wsl|docker|vbox|vmware|loopback|tailscale|ZeroTier/i.test(name)) continue;
+      for (const a of addrs || []) {
+        if ((a.family === "IPv4" || a.family === 4) && !a.internal && a.address) {
+          candidates.push(a.address);
+        }
+      }
+    }
+    const prio = candidates.find((ip) => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(ip));
+    return prio || candidates[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+let cachedProviders = { at: 0, data: null };
+
+function checkCliInstalled(cmd, args = ["--version"]) {
+  try {
+    const r = spawnSync(cmd, args, { encoding: "utf8", windowsHide: true, timeout: 2500 });
+    return !r.error && r.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function detectProviders(port = 3001) {
+  const now = Date.now();
+  if (cachedProviders.data && now - cachedProviders.at < 15_000) {
+    return { ...cachedProviders.data, lanUrl: localLanIp() ? `http://${localLanIp()}:${port}` : null };
+  }
+  const lanIp = localLanIp();
+  const lanUrl = lanIp ? `http://${lanIp}:${port}` : null;
+  const cfInstalled = checkCliInstalled("cloudflared", ["--version"]);
+  let tsInstalled = false;
+  let tsRunning = false;
+  let tsDns = null;
+  try {
+    const st = spawnSync("tailscale", ["status", "--json"], { encoding: "utf8", windowsHide: true, timeout: 2500 });
+    if (!st.error) {
+      tsInstalled = true;
+      if (st.status === 0) {
+        const info = JSON.parse(st.stdout || "{}");
+        tsRunning = info.BackendState === "Running";
+        tsDns = String(info.Self?.DNSName || "").replace(/\.$/, "") || null;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  const ngrokInstalled = checkCliInstalled("ngrok", ["version"]);
+  const providers = [
+    {
+      id: "cloudflared",
+      name: "Cloudflare Quick Tunnel",
+      badge: "Recommended",
+      installed: cfInstalled,
+      ready: cfInstalled,
+      command: `cloudflared tunnel --url http://127.0.0.1:${port}`,
+      installHint: process.platform === "win32" ? "winget install Cloudflare.cloudflared" : "brew install cloudflared",
+      description: "Fast global edge HTTPS tunnel — zero signup, no account, no rate limits.",
+    },
+    {
+      id: "tailscale",
+      name: "Tailscale Funnel",
+      badge: tsRunning ? "Connected" : "Mesh / HTTPS",
+      installed: tsInstalled,
+      ready: tsInstalled && tsRunning && Boolean(tsDns),
+      dns: tsDns ? `https://${tsDns}` : null,
+      command: `tailscale funnel --bg ${port}`,
+      installHint: "tailscale funnel " + port,
+      description: "Private Tailnet mesh or public HTTPS via Tailscale Funnel.",
+    },
+    {
+      id: "lan",
+      name: "Direct LAN / Custom URL",
+      badge: lanUrl ? "Zero-install LAN" : "Custom URL",
+      installed: true,
+      ready: Boolean(lanUrl),
+      lanIp,
+      lanUrl,
+      command: lanUrl || "https://your-relay-host.example.com",
+      description: "Instant zero-install sharing on the same Wi-Fi/LAN, or paste any self-hosted/tunnel URL (Railway, Fly.io, etc.).",
+    },
+    {
+      id: "ngrok",
+      name: "ngrok",
+      badge: "Legacy",
+      installed: ngrokInstalled,
+      ready: ngrokInstalled,
+      command: `ngrok http ${port}`,
+      installHint: process.platform === "win32" ? "winget install Ngrok.Ngrok" : "brew install ngrok",
+      description: "Classic HTTP tunnel (requires ngrok authtoken; subject to free-tier rate limits).",
+    },
+  ];
+  const out = { lanIp, lanUrl, providers };
+  cachedProviders = { at: now, data: out };
+  return out;
+}
+
+function inferProviderFromUrl(url, explicit) {
+  if (explicit && explicit !== "auto") return explicit;
+  const u = String(url || "").toLowerCase();
+  if (u.includes(".trycloudflare.com")) return "cloudflared";
+  if (u.includes(".ts.net")) return "tailscale";
+  if (u.includes("ngrok")) return "ngrok";
+  if (/^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.|localhost|127\.)/.test(u)) return "lan";
+  return explicit || "custom";
+}
 
 function roomPath(workspacePath) {
   if (workspacePath) {
@@ -364,32 +479,36 @@ function activeTunnelUrl() {
  *   3. Tailscale Funnel (`tailscale funnel --bg <port>`) — fast if Tailscale is logged in
  *   4. ngrok (`ngrok http <port>`) — legacy fallback
  */
-async function ensureTunnel(port) {
+async function ensureTunnel(port, requestedProvider) {
   if (ensureInFlight) return ensureInFlight;
-  ensureInFlight = ensureTunnelOnce(port).finally(() => {
+  ensureInFlight = ensureTunnelOnce(port, requestedProvider).finally(() => {
     ensureInFlight = null;
   });
   return ensureInFlight;
 }
 
-async function ensureTunnelOnce(port) {
-  const pref = String(process.env.RELAY_TUNNEL || "").trim().toLowerCase();
-  if (process.env.RELAY_PUBLIC_URL) {
+async function ensureTunnelOnce(port, requestedProvider) {
+  const pref = String(requestedProvider || process.env.RELAY_TUNNEL || "").trim().toLowerCase();
+  if (pref === "lan") {
+    const ip = localLanIp();
+    return ip ? `http://${ip}:${port}` : null;
+  }
+  if (!requestedProvider && process.env.RELAY_PUBLIC_URL) {
     return String(process.env.RELAY_PUBLIC_URL).trim().replace(/\/$/, "");
   }
-  if (cloudflaredAlive() && cloudflaredUrl && (!pref || pref === "cloudflared")) {
+  if (cloudflaredAlive() && cloudflaredUrl && (!pref || pref === "auto" || pref === "cloudflared")) {
     return cloudflaredUrl;
   }
 
   // Try Cloudflare Quick Tunnel first (unless user explicitly requested tailscale/ngrok).
-  if (!pref || pref === "cloudflared") {
+  if (!pref || pref === "auto" || pref === "cloudflared") {
     const cfUrl = await spawnCloudflared(port);
     if (cfUrl) return cfUrl;
     if (pref === "cloudflared") return null;
   }
 
   // Try Tailscale Funnel next.
-  if (!pref || pref === "tailscale") {
+  if (!pref || pref === "auto" || pref === "tailscale") {
     const tsUrl = tryTailscaleFunnel(port);
     if (tsUrl) return tsUrl;
     if (pref === "tailscale") return null;
@@ -442,6 +561,7 @@ function newHostRoom(url, extra, existing) {
     role: "host",
     live: true,
     url,
+    provider: inferProviderFromUrl(url, extra.provider || keep.provider),
     roomId: keep.roomId || mintRoomId(),
     nonce: keep.nonce || mintNonce(),
     hostProjectId: extra.hostProjectId || keep.hostProjectId || null,
@@ -460,19 +580,37 @@ function newHostRoom(url, extra, existing) {
   };
 }
 
+function providerErrorHint(provider, port = 3001) {
+  if (provider === "cloudflared") {
+    return "Cloudflare Quick Tunnel (`cloudflared`) is not installed or could not reach the edge. Install it with `winget install Cloudflare.cloudflared` (Windows) or `brew install cloudflared` (macOS), or choose Direct LAN / Custom URL.";
+  }
+  if (provider === "tailscale") {
+    return `Tailscale Funnel is not active on this machine. Make sure Tailscale is logged in and run \`tailscale funnel ${port}\`, or pick Cloudflare Quick Tunnel / Direct LAN.`;
+  }
+  if (provider === "lan") {
+    return "Could not detect a local LAN IPv4 address. Enter your machine's LAN or custom URL manually.";
+  }
+  if (provider === "ngrok") {
+    return "ngrok could not be started (check `ngrok config add-authtoken` or free-tier limits). Try Cloudflare Quick Tunnel (`cloudflared`) instead.";
+  }
+  return NGROK_HINT;
+}
+
 async function share(port, extra = {}) {
   const explicitUrl = extra.url ? String(extra.url).trim().replace(/\/$/, "") : null;
-  const url = explicitUrl || (await ensureTunnel(port));
+  const requestedProvider = extra.provider ? String(extra.provider).trim().toLowerCase() : null;
+  const url = explicitUrl || (await ensureTunnel(port, requestedProvider));
   if (!url) {
     return {
       ok: false,
-      error: "ngrok_unavailable",
-      hint: NGROK_HINT,
+      error: "tunnel_unavailable",
+      provider: requestedProvider || "auto",
+      hint: providerErrorHint(requestedProvider, port),
     };
   }
   const existing = loadRoom(extra.workspacePath);
   const room = saveRoom(
-    upsertMember(newHostRoom(url, extra, existing), extra.hostUser, "host"),
+    upsertMember(newHostRoom(url, { ...extra, provider: inferProviderFromUrl(url, requestedProvider) }, existing), extra.hostUser, "host"),
     extra.workspacePath
   );
   return { ok: true, room };
@@ -494,5 +632,7 @@ module.exports = {
   dropMember,
   membersView,
   mintRoomId,
+  detectProviders,
+  localLanIp,
   NGROK_HINT,
 };

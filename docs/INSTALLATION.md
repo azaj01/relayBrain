@@ -9,11 +9,51 @@
 | **Required** | Node.js 20+ (`package.json` declares `engines.node >= 20`), npm |
 | **Bundled** | `express`, `cors`, `ws`, `@vscode/tree-sitter-wasm`, `falkordb` (client); `next` and `react` for Mission Control |
 | **Not needed** | MongoDB, Redis, a hosted backend, an account |
-| **Optional** | [`gh` CLI](https://cli.github.com) for `relay login`; [ngrok](https://ngrok.com) for cross-machine rooms; [Docker](https://www.docker.com/products/docker-desktop/) (or a hosted FalkorDB) for the [memory graph](./MEMORY-GRAPH.md) |
+| **Optional** | [`gh` CLI](https://cli.github.com) for `relay login`; [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) / [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) / custom URL (or [ngrok](https://ngrok.com)) for cross-machine rooms; [Docker](https://www.docker.com/products/docker-desktop/) (or hosted [FalkorDB Cloud](https://app.falkordb.cloud)) for the [memory graph](./MEMORY-GRAPH.md) |
 
 Coordination needs no database: Relay keeps locks, history and room state in JSON files
 under `~/.relay` and `<repo>/.relay`. The optional memory graph adds a FalkorDB database
 (`relay graph up`); without it, everything else works exactly the same.
+
+### How to install required & optional tools
+
+#### 1. Node.js 20+ & npm *(Required)*
+
+- **Windows (`winget`):** `winget install OpenJS.NodeJS.LTS`
+- **macOS (`brew`):** `brew install node@20`
+- **Linux (Ubuntu/Debian):** `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`
+
+#### 2. Docker Desktop / Docker Engine *(Optional — local FalkorDB memory graph)*
+
+For `relay graph up` (alternatively, use [FalkorDB Cloud](https://app.falkordb.cloud) with `relay graph enable --url ...`):
+
+- **Windows (`winget`):** `winget install Docker.DockerDesktop`
+- **macOS (`brew`):** `brew install --cask docker`
+- **Linux:** `curl -fsSL https://get.docker.com | sh`
+
+#### 3. GitHub CLI (`gh`) *(Optional — for `relay login` and room signaling)*
+
+Install `gh` and authenticate once with `gh auth login`:
+
+- **Windows (`winget`):** `winget install GitHub.cli`
+- **macOS (`brew`):** `brew install gh`
+- **Linux (Ubuntu/Debian):** `sudo apt-get update && sudo apt-get install -y gh`
+
+#### 4. Tunnel Provider for Cross-Machine Rooms *(Optional — room host only)*
+
+Only needed by the room host when sharing across networks:
+
+- **Cloudflare Quick Tunnels (`cloudflared`) — Recommended** *(zero-signup, no rate limits)*:
+  - **Windows (`winget`):** `winget install Cloudflare.cloudflared`
+  - **macOS (`brew`):** `brew install cloudflared`
+  - **Linux:** `curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared`
+- **Tailscale Funnel (`tailscale`):**
+  - **Windows (`winget`):** `winget install Tailscale.Tailscale`
+  - **macOS (`brew`):** `brew install --cask tailscale`
+  - **Linux:** `curl -fsSL https://tailscale.com/install.sh | sh`
+  - Run `tailscale funnel 3001`
+- **Custom URL / Cloud VM:**
+  - Set `RELAY_PUBLIC_URL=https://your-domain` or paste the URL in the **Team** tab in Mission Control.
 
 ---
 
