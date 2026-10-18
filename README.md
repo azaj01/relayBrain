@@ -8,7 +8,7 @@
 
 **Twelve agents on one repo, and none of them blind to the others.**
 
-[**Watch the demo**](https://youtu.be/vUea5Qih-nM) · [**FalkorDB Memory Graph Docs**](./docs/MEMORY-GRAPH.md) · [**Engineering Blog Post**](./docs/BLOG-POST.md) · [**Full Documentation**](https://relay-brain.vercel.app/docs.html)
+[**Watch the demo**](https://youtu.be/BnqwgC7M7E8) · [**FalkorDB Memory Graph Docs**](./docs/MEMORY-GRAPH.md) · [**Read the blog**](https://relaybrain.hashnode.dev/locks-say-no-the-graph-says-why-giving-ai-coding-agents-a-shared-memory-with-falkordb) · [**Full Documentation**](https://relay-brain.vercel.app/docs.html)
 
 <br/>
 
@@ -63,7 +63,7 @@ Relay sits under every agent as a **real-time coordination and graph-memory laye
 
 ![Relay Demo](./screenRec.gif)
 
-**[Watch the full demo on YouTube](https://youtu.be/vUea5Qih-nM)**
+**[Watch the full demo on YouTube](https://youtu.be/BnqwgC7M7E8)**
 
 </div>
 
