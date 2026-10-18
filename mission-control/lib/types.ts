@@ -91,6 +91,7 @@ export type OpenRoom = {
 export type Room = {
   role: string;
   url: string;
+  provider?: string | null;
   open?: boolean;
   live?: boolean;
   roomId?: string | null;
@@ -105,6 +106,20 @@ export type Room = {
   /** Guests only: is the host answering? Undefined on a host or solo install. */
   hostReachable?: boolean;
   lastHostContactAt?: number | null;
+};
+
+export type TunnelProvider = {
+  id: "cloudflared" | "tailscale" | "lan" | "ngrok";
+  name: string;
+  badge: string;
+  installed: boolean;
+  ready: boolean;
+  dns?: string | null;
+  lanIp?: string | null;
+  lanUrl?: string | null;
+  command: string;
+  installHint?: string;
+  description: string;
 };
 
 export type ActivityItem = {

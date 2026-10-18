@@ -9,7 +9,19 @@ import "@xyflow/react/dist/style.css";
 import { useRelay } from "@/lib/RelayContext";
 import { apiUrl } from "@/lib/api";
 import { MarkdownView } from "@/lib/markdown";
-import { graphHealth, useGraphTick, useQuery, type Brief, type GraphNode, type Health, type Neighborhood, type QueryResult } from "./useMemoryGraph";
+import {
+  graphHealth,
+  rebuildGraphApi,
+  seedDemoGraphApi,
+  useGraphTick,
+  useQuery,
+  type Brief,
+  type GraphMode,
+  type GraphNode,
+  type Health,
+  type Neighborhood,
+  type QueryResult,
+} from "./useMemoryGraph";
 import m from "./memorygraph.module.css";
 
 type Row = Record<string, unknown>;
@@ -173,14 +185,14 @@ function layout(n: Neighborhood | null) {
   return { nodes, edges };
 }
 
-function Canvas({ data, onOpen }: { data: Neighborhood | null; onOpen: (path: string) => void }) {
+function Canvas({ data, onOpen, emptyHint }: { data: Neighborhood | null; onOpen: (path: string) => void; emptyHint?: string }) {
   const { nodes, edges } = useMemo(() => layout(data), [data]);
   const rf = useReactFlow();
   useEffect(() => {
     const t = window.setTimeout(() => rf.fitView({ padding: 0.08, duration: 300, maxZoom: 1.1 }), 60);
     return () => window.clearTimeout(t);
   }, [nodes, rf]);
-  if (!nodes.length) return <div className={m.emptyCanvas}>Pick a file to see its memory.</div>;
+  if (!nodes.length) return <div className={m.emptyCanvas}>{emptyHint || "Pick a file to see its memory."}</div>;
   return (
     <ReactFlow
       nodes={nodes}
@@ -288,10 +300,10 @@ function ExplainRows({ name, rows }: { name: string; rows: Row[] }) {
   return null;
 }
 
-function Explain({ projectId, path, tick }: { projectId: string; path: string; tick: number }) {
+function Explain({ projectId, path, tick, mode }: { projectId: string; path: string; tick: number; mode: GraphMode }) {
   const [tab, setTab] = useState<(typeof EXPLAIN)[number]["id"]>("file_story");
   const params = tab === "session_brief" ? { paths: path } : { path, limit: 12 };
-  const { data, loading } = useQuery<Row>(projectId, tab, params, tick);
+  const { data, loading } = useQuery<Row>(projectId, tab, params, tick, mode);
   const brief = data as Brief | null;
   return (
     <section className={m.explain}>
@@ -319,10 +331,10 @@ function Explain({ projectId, path, tick }: { projectId: string; path: string; t
   );
 }
 
-function Search({ projectId, tick, onOpen }: { projectId: string; tick: number; onOpen: (p: string) => void }) {
+function Search({ projectId, tick, mode, onOpen }: { projectId: string; tick: number; mode: GraphMode; onOpen: (p: string) => void }) {
   const [draft, setDraft] = useState("");
   const [q, setQ] = useState("");
-  const { data } = useQuery<Row>(projectId, q ? "search_memory" : null, { q, limit: 8 }, tick);
+  const { data } = useQuery<Row>(projectId, q ? "search_memory" : null, { q, limit: 8 }, tick, mode);
   return (
     <div className={m.block}>
       <h4>Search every agent conversation</h4>
@@ -426,21 +438,26 @@ function Panel() {
   const [kick, setKick] = useState(0);
   const tick = liveTick + kick;
   const [health, setHealth] = useState<Health | null>(null);
+  const [mode, setMode] = useState<GraphMode>("live");
   const [file, setFile] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
 
   useEffect(() => {
     graphHealth().then(setHealth);
   }, [tick]);
 
-  const overview = useQuery<{ label: string; count: number }>(projectId, "overview", {}, tick);
-  const hotspots = useQuery<Row>(projectId, "hotspots", { limit: 12 }, tick);
-  const blocks = useQuery<Row>(projectId, "contention_trace", { limit: 4 }, tick);
-  const neighborhood = useQuery<Row>(projectId, "neighborhood", { path: file || undefined }, tick);
+  const overview = useQuery<{ label: string; count: number }>(projectId, "overview", {}, tick, mode);
+  const hotspots = useQuery<Row>(projectId, "hotspots", { limit: 12 }, tick, mode);
+  const blocks = useQuery<Row>(projectId, "contention_trace", { limit: 4 }, tick, mode);
+  const neighborhood = useQuery<Row>(projectId, "neighborhood", { path: file || undefined }, tick, mode);
   const hood = neighborhood.data as unknown as Neighborhood | null;
 
   useEffect(() => {
     setFile(null);
-  }, [projectId]);
+    setActionMsg(null);
+  }, [projectId, mode]);
+
   // Open on the top hotspot shown in the list, so the canvas and the list agree.
   const topHotspot = ((hotspots.data?.rows as Row[] | undefined) || [])[0]?.file as string | undefined;
   useEffect(() => {
@@ -452,23 +469,118 @@ function Panel() {
   const counts = Object.fromEntries(((overview.data?.rows as { label: string; count: number }[]) || []).map((r) => [r.label, r.count]));
   const off = overview.data?.ok === false;
   const focusPath = (hood?.nodes || []).find((n) => n.kind === "file" && n.props.focus)?.label || file;
+  const totalNodes = Object.values(counts).reduce((acc, n) => acc + Number(n || 0), 0);
+
+  async function handleRebuildLive() {
+    if (!projectId) return;
+    setActionBusy(true);
+    setActionMsg(null);
+    try {
+      const res = await rebuildGraphApi(projectId);
+      if (!res.ok) setActionMsg(res.reason || "Could not rebuild live graph");
+      else {
+        setFile(null);
+        setActionMsg(`Rebuilt live graph from ${res.events ?? 0} real transcript events.`);
+        setKick((k) => k + 1);
+      }
+    } catch (err) {
+      setActionMsg(String((err as Error).message || err));
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleSeedDemo() {
+    if (!projectId) return;
+    setActionBusy(true);
+    setActionMsg(null);
+    try {
+      const res = await seedDemoGraphApi(projectId);
+      if (!res.ok) setActionMsg(res.reason || "Could not load demo scenario");
+      else {
+        setFile("src/auth.ts");
+        setActionMsg("Loaded isolated 5-agent (@alice & @bob) demo sandbox.");
+        setKick((k) => k + 1);
+      }
+    } catch (err) {
+      setActionMsg(String((err as Error).message || err));
+    } finally {
+      setActionBusy(false);
+    }
+  }
 
   return (
     <div className={m.wrap}>
       <div className={m.caption}>
-        <div>
-          <b>Project memory graph</b> <span className={m.muted}>· FalkorDB · {health?.breaker?.state === "closed" ? "live" : health?.enabled ? health?.breaker?.state || "connecting" : "off"}</span>
+        <div className={m.captionLeft}>
+          <b>Project memory graph</b>{" "}
+          <span className={m.muted}>
+            · FalkorDB · {health?.breaker?.state === "closed" ? "live" : health?.enabled ? health?.breaker?.state || "connecting" : "off"}
+          </span>
+          <div className={m.modeSwitch} role="group" aria-label="Graph data source">
+            <button
+              type="button"
+              className={`${m.modeBtn} ${mode === "live" ? m.modeOn : ""}`}
+              onClick={() => setMode("live")}
+            >
+              ● Live Workspace Graph
+            </button>
+            <button
+              type="button"
+              className={`${m.modeBtn} ${mode === "demo" ? m.modeDemoOn : ""}`}
+              onClick={() => setMode("demo")}
+            >
+              ◆ Interactive Demo Sandbox
+            </button>
+          </div>
         </div>
+
         {!off ? (
-          <div className={m.stats}>
-            {["Session", "Turn", "Edit", "File", "Contention", "Overlap", "Decision"].map((k) => (
-              <span key={k}>
-                <b>{counts[k] || 0}</b> {k === "Turn" ? "turns" : k.toLowerCase() + "s"}
-              </span>
-            ))}
+          <div className={m.captionRight}>
+            <div className={m.stats}>
+              {["Session", "Turn", "Edit", "File", "Contention", "Overlap", "Decision"].map((k) => (
+                <span key={k}>
+                  <b>{counts[k] || 0}</b> {k === "Turn" ? "turns" : k.toLowerCase() + "s"}
+                </span>
+              ))}
+            </div>
+            {mode === "live" ? (
+              <button type="button" className={m.actionBtn} disabled={actionBusy} onClick={handleRebuildLive}>
+                {actionBusy ? "Rebuilding…" : "↻ Rebuild from real transcripts"}
+              </button>
+            ) : (
+              <button type="button" className={m.actionBtnDemo} disabled={actionBusy} onClick={handleSeedDemo}>
+                {actionBusy ? "Seeding…" : totalNodes ? "↻ Reset 5-Agent Demo" : "▶ Load 5-Agent Demo Scenario"}
+              </button>
+            )}
           </div>
         ) : null}
       </div>
+
+      <div className={mode === "demo" ? m.bannerDemo : m.bannerLive}>
+        {mode === "live" ? (
+          <>
+            <span>
+              <b>Live Working Mode</b> — Reading <code>relay_{projectId}</code> (100% real agent transcripts, locks &amp; decisions from this workspace; zero synthetic demo data).
+            </span>
+            <span className={m.muted}>
+              <b>Coordinator vs. Memory Graph:</b> Coordinator tracks real-time active locks &amp; 5-min edit collisions right now; Memory Graph stores cross-session causal history (prompts, past blocks, decisions &amp; PageRank hotspots).
+            </span>
+          </>
+        ) : (
+          <>
+            <span>
+              <b>Isolated Demo Sandbox</b> — Reading <code>relay_demo_{projectId}</code> (synthetic 5-agent <code>@alice</code> / <code>@bob</code> scenario on <code>src/auth.ts</code>). Your real workspace graph is completely untouched.
+            </span>
+            {!totalNodes ? (
+              <button type="button" className={m.enableBtn} disabled={actionBusy} onClick={handleSeedDemo}>
+                {actionBusy ? "Loading…" : "Load 5-Agent Demo Scenario"}
+              </button>
+            ) : null}
+          </>
+        )}
+      </div>
+      {actionMsg ? <div className={m.actionNote}>{actionMsg}</div> : null}
 
       {off ? (
         <EnableGraph onEnabled={() => setKick((k) => k + 1)} />
@@ -503,18 +615,33 @@ function Panel() {
                     </li>
                   ))}
                 </ul>
+                {!((hotspots.data?.rows as Row[]) || []).length ? (
+                  <p className={m.muted} style={{ fontSize: 12, margin: "6px 0" }}>
+                    {mode === "demo"
+                      ? "Click “Load 5-Agent Demo Scenario” above to populate the sandbox."
+                      : "No co-edited file hotspots yet in this workspace."}
+                  </p>
+                ) : null}
                 <CypherNote r={hotspots.data} />
               </div>
-              <Search projectId={projectId} tick={tick} onOpen={setFile} />
+              <Search projectId={projectId} tick={tick} mode={mode} onOpen={setFile} />
             </aside>
 
             <div className={m.main}>
               <div className={m.canvas}>
                 <ReactFlowProvider>
-                  <Canvas data={hood} onOpen={setFile} />
+                  <Canvas
+                    data={hood}
+                    onOpen={setFile}
+                    emptyHint={
+                      mode === "demo" && !totalNodes
+                        ? "Demo sandbox is empty — click “Load 5-Agent Demo Scenario” above to explore the 5-agent @alice/@bob graph."
+                        : "Pick a file from Hotspots (or search by path) to inspect its causal memory."
+                    }
+                  />
                 </ReactFlowProvider>
               </div>
-              {focusPath ? <Explain projectId={projectId} path={focusPath} tick={tick} /> : null}
+              {focusPath ? <Explain projectId={projectId} path={focusPath} tick={tick} mode={mode} /> : null}
             </div>
           </div>
         </>
